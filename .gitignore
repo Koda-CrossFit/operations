@@ -1,0 +1,4 @@
+dev/screenshots/
+.clasp.json
+node_modules/
+SPEC.md

@@ -1,0 +1,4174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#ffffff">
+<meta name="color-scheme" content="light">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Operations">
+<title>Koda Operations</title>
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="assets/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="manifest" href="assets/manifest.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Print media means it never holds up the first paint: on a bad connection the page still opens at once, in the system font. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" media="print" onload="this.media='all'">
+<style>
+:root{
+  color-scheme: light;
+  --ink:#0C1A2B;
+  --text:#27323F;
+  --muted:#5F6B7A;
+  --koda:#16324F;
+  --koda-slate:#536779;
+  --tint:#EEF3F8;
+  --line:#E5E9EF;
+  --soft:#F7F9FB;
+  --danger:#B42318;
+  --radius:14px;
+
+  --edge:#C9D1DB;          /* the outline of something you can tap or type in */
+  --safe-t:env(safe-area-inset-top,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-l:env(safe-area-inset-left,0px);
+  --safe-r:env(safe-area-inset-right,0px);
+  --gutter:16px;
+  --bar:56px;
+  --stick:calc(var(--bar) + var(--safe-t));   /* where sticky things stop under the header */
+  --floor:calc(var(--bar) + var(--safe-b));   /* and above the tab bar */
+}
+@media (min-width:360px){:root{--gutter:20px}}
+
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:manipulation}
+body{
+  margin:0;background:#fff;color:var(--text);
+  font:400 16px/1.45 Inter,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  overflow-wrap:anywhere;
+}
+@media (max-width:899.98px){body.locked{overflow:hidden}}
+h1,h2,h3,p,ul,ol,figure{margin:0;padding:0}
+ul,ol{list-style:none}
+button,input,select,textarea{font:inherit;color:inherit;margin:0}
+button{
+  background:none;border:0;padding:0;cursor:pointer;text-align:inherit;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+  -webkit-user-select:none;user-select:none;
+}
+button:disabled{cursor:default}
+svg{display:block;flex:none}
+.i{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+:focus{outline:none}
+:focus-visible{outline:2px solid var(--koda);outline-offset:2px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ----- type ----- */
+.title{font-size:26px;line-height:1.2;font-weight:700;letter-spacing:-.02em;color:var(--ink)}
+.h2{font-size:19px;line-height:1.3;font-weight:600;letter-spacing:-.01em;color:var(--ink)}
+.h3{font-size:17px;line-height:1.3;font-weight:600;color:var(--ink)}
+.lead{font-size:16px;color:var(--muted)}
+.muted{color:var(--muted)}
+.small{font-size:14px}
+.strong{font-weight:600;color:var(--ink)}
+.nowrap{white-space:nowrap}
+.err{color:var(--danger);font-size:15px;font-weight:500}
+.danger{color:var(--danger)}
+
+/* ----- buttons ----- */
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  min-height:56px;padding:12px 20px;border-radius:var(--radius);
+  font-size:17px;font-weight:600;line-height:1.25;text-align:center;
+  transition:background-color .15s,border-color .15s,color .15s;
+}
+.btn-primary{background:var(--koda);color:#fff}
+.btn-primary:active{background:#0F2439}
+.btn-primary:disabled{background:#7E8FA1}
+.btn-soft{background:var(--tint);color:var(--koda)}
+.btn-soft:active{background:#E1E9F1}
+.btn-line{background:#fff;color:var(--ink);border:1px solid var(--edge)}
+.btn-line:active{background:var(--soft)}
+.btn-line:disabled{color:var(--muted);border-color:var(--line);background:var(--soft)}
+.btn-sm{width:auto;min-height:44px;padding:8px 16px;font-size:15px;border-radius:12px}
+.link{
+  display:inline-flex;align-items:center;min-height:44px;border-radius:8px;color:var(--koda);font-size:15px;font-weight:500;
+  text-decoration:underline;text-decoration-color:#B9C6D3;text-underline-offset:3px;
+}
+.link-center{display:flex;width:100%;justify-content:center}
+.icon-btn{display:grid;place-items:center;width:44px;height:44px;border-radius:50%;color:var(--koda-slate)}
+.icon-btn:active{background:var(--soft)}
+
+/* ----- shell ----- */
+.top{
+  position:sticky;top:0;z-index:20;height:var(--stick);padding-top:var(--safe-t);
+  padding-left:calc(var(--gutter) + var(--safe-l));padding-right:calc(var(--gutter) - 6px + var(--safe-r));
+  display:flex;align-items:center;justify-content:space-between;
+  background:#fff;border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:600;letter-spacing:-.01em;color:var(--ink)}
+.brand svg{height:15px;width:auto;fill:var(--ink)}
+.avatar{
+  display:grid;place-items:center;flex:none;width:40px;height:40px;border-radius:50%;
+  background:var(--tint);color:var(--koda);font-weight:600;font-size:16px;line-height:1;
+}
+.avatar-sm{width:32px;height:32px;font-size:14px}
+.top-me{display:grid;place-items:center;width:44px;height:44px;border-radius:50%}
+.main{
+  padding:20px calc(var(--gutter) + var(--safe-r)) calc(var(--bar) + var(--safe-b) + 40px) calc(var(--gutter) + var(--safe-l));
+}
+.tabbar{
+  position:fixed;left:0;right:0;bottom:0;z-index:20;height:calc(var(--bar) + var(--safe-b));padding-bottom:var(--safe-b);
+  padding-left:var(--safe-l);padding-right:var(--safe-r);
+  display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);
+  background:#fff;border-top:1px solid var(--line);
+}
+.tab{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-width:0;height:var(--bar);
+  font-size:13px;line-height:16px;font-weight:500;color:var(--muted);
+}
+.tab[aria-current=page]{color:var(--koda);font-weight:600}
+.tab[aria-current=page] .i{stroke-width:2.1}
+.tab .tiny{display:none}
+.side{display:none}
+
+@media (max-width:359.98px){
+  .tabbar-5 .tab .swap{display:none}
+  .tabbar-5 .tab .tiny{display:inline}
+}
+
+/* A tablet gets one comfortable column too, except for the managers' wide tables. */
+@media (min-width:600px) and (max-width:899.98px){
+  .main{max-width:calc(640px + 2 * var(--gutter));margin:0 auto}
+  .wide .main{max-width:none}
+}
+
+@media (min-width:900px){
+  html{scrollbar-gutter:stable}
+  :root{--stick:0px;--floor:0px;--gutter:32px}
+  .top,.tabbar{display:none}
+  .side{
+    position:fixed;left:0;top:0;bottom:0;width:220px;z-index:20;
+    display:flex;flex-direction:column;padding:22px 12px 14px;
+    background:#fff;border-right:1px solid var(--line);
+  }
+  .side .brand{padding:0 10px 22px}
+  .side-nav{display:flex;flex-direction:column;gap:2px;flex:1}
+  .side-link{
+    display:flex;align-items:center;gap:12px;width:100%;min-height:46px;padding:0 10px;border-radius:10px;
+    font-weight:500;color:var(--muted);
+  }
+  .side-link:hover{background:var(--soft)}
+  .side-link[aria-current=page]{background:var(--tint);color:var(--koda);font-weight:600}
+  .side-me{
+    display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:6px 10px;border-radius:10px;
+    font-weight:500;color:var(--ink);border-top:0;
+  }
+  .side-me:hover{background:var(--soft)}
+  .col{margin-left:220px}
+  .main{max-width:calc(640px + 64px);margin:0 auto;padding:36px 32px 64px}
+  .wide .main{max-width:calc(1100px + 64px)}
+}
+
+/* ----- blocks ----- */
+.card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 1px 2px rgba(12,26,43,.05)}
+.sec{margin-top:28px}
+.sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}
+.count{font-size:15px;color:var(--muted);white-space:nowrap}
+.hello{margin-bottom:16px}
+.hello-date{font-size:15px;color:var(--muted);margin-bottom:2px}
+.empty{padding:36px 20px;text-align:center}
+.empty .h3{margin-bottom:4px}
+.badge{
+  display:grid;place-items:center;width:56px;height:56px;margin:0 auto 14px;border-radius:50%;
+  background:var(--tint);color:var(--koda);
+}
+.chip{
+  display:inline-flex;align-items:center;min-height:24px;padding:2px 10px;border-radius:999px;
+  background:var(--tint);color:var(--koda);font-size:13px;line-height:18px;font-weight:600;white-space:nowrap;
+}
+.chip-quiet{background:var(--soft);color:var(--muted);font-weight:500}
+.chip-danger{background:#FEF3F2;color:var(--danger)}
+.chip-wrap{white-space:normal;min-width:0;border-radius:12px}
+.quiet-note{margin-bottom:14px;padding:10px 14px;border-radius:12px;background:var(--soft);color:var(--muted);font-size:15px}
+
+/* ----- clock card ----- */
+.clock{padding:20px}
+.clock-label{font-size:14px;color:var(--muted)}
+.clock-shift{font-size:19px;line-height:1.3;font-weight:600;letter-spacing:-.01em;color:var(--ink);margin-bottom:14px}
+.clock-state{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:500;color:var(--ink)}
+.clock-dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--koda)}
+.clock-time{font-size:30px;line-height:1.2;font-weight:700;letter-spacing:-.02em;color:var(--ink);margin:4px 0 2px}
+.clock-sub{font-size:15px;color:var(--muted);margin-bottom:14px}
+.clock-note{font-size:15px;color:var(--muted);margin-bottom:12px}
+.clock .link{margin-top:6px}
+.clock-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.clock-row .btn{flex:none}
+.clock-row-text{min-width:0}
+.clock-linked{padding-bottom:8px}
+.clock-small{padding:12px 12px 12px 16px}
+.clock-small .link{margin:2px 0 -8px}
+
+/* ----- stale clock-out ----- */
+.stale{padding:20px;margin-bottom:12px;border-color:#F1C7C2}
+.stale-tag{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:14px;font-weight:600;color:var(--danger)}
+.stale-tag i{width:8px;height:8px;border-radius:50%;background:var(--danger)}
+.stale form{margin-top:14px}
+
+/* ----- tasks ----- */
+.prog{height:4px;border-radius:2px;background:var(--line);overflow:hidden;margin-bottom:12px}
+.prog i{display:block;height:100%;border-radius:2px;background:var(--koda);transition:width .25s ease}
+.tasks{background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 1px 2px rgba(12,26,43,.05)}
+.task{display:grid;grid-template-columns:56px minmax(0,1fr)}
+.task+.task{border-top:1px solid var(--line)}
+.check{
+  display:flex;align-items:flex-start;justify-content:center;width:56px;min-height:100%;padding-top:17px;
+  border-radius:var(--radius) 0 0 var(--radius);
+}
+.check:focus-visible{outline-offset:-3px}
+.circle{
+  display:grid;place-items:center;width:28px;height:28px;border-radius:50%;
+  border:2px solid var(--koda-slate);background:#fff;   /* the one control this whole site is for, so it can't be faint */
+  transition:background-color .12s,border-color .12s,transform .12s;
+}
+@media (hover:hover){.check:hover .circle{border-color:var(--koda)}}
+.check:active .circle{transform:scale(.9)}
+.circle svg{width:16px;height:16px;fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:0;transform:scale(.6);transition:opacity .12s,transform .12s}
+.check[aria-checked=true] .circle{background:var(--koda);border-color:var(--koda)}
+.check[aria-checked=true] .circle svg{opacity:1;transform:none}
+.task-main{display:block;width:100%;min-width:0;padding:16px 16px 16px 0;text-align:left;border-radius:0 var(--radius) var(--radius) 0}
+.task-main:focus-visible{outline-offset:-3px}
+.task-title{display:block;font-size:17px;line-height:1.3;font-weight:600;color:var(--ink);transition:color .15s}
+.task-details{display:block;margin-top:3px;font-size:16px;line-height:1.4;color:var(--muted)}
+.task-meta{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:6px;padding-right:26px;font-size:14px;line-height:1.4;color:var(--muted)}
+.task-note{display:flex;gap:6px;margin-top:8px;font-size:15px;line-height:1.4;color:var(--text);white-space:pre-wrap}
+.task-note-mark{position:absolute;right:0;bottom:1px;color:#8D99A6}
+.task-note-mark svg{width:18px;height:18px}
+.task-note svg{width:16px;height:16px;margin-top:3px;color:var(--koda-slate)}
+.task.done .task-title{color:var(--muted)}
+.task.done .task-details{opacity:.85}
+.note-edit{grid-column:1/-1;padding:0 16px 16px 56px;scroll-margin:calc(var(--stick) + 12px) 0 calc(var(--floor) + 84px)}
+.note-edit .input{min-height:84px;font-size:16px}
+.row-btns{display:flex;gap:8px;margin-top:10px}
+.row-btns .btn{flex:1;padding-left:10px;padding-right:10px;white-space:nowrap}
+
+/* ----- all done / open tasks ----- */
+.alldone{margin-top:12px;padding:24px 20px;text-align:center;scroll-margin-bottom:calc(var(--floor) + 16px)}
+.alldone .btn{margin-top:14px}
+.open-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:56px;padding:12px 16px;font-weight:500;color:var(--ink)}
+.open-toggle .i{color:var(--koda-slate);transition:transform .15s}
+.open-toggle[aria-expanded=true] .i{transform:rotate(90deg)}
+#open-tasks{scroll-margin:calc(var(--stick) + 12px) 0 calc(var(--floor) + 16px)}
+.open-hint{padding:0 16px 12px;font-size:15px;color:var(--muted)}
+.open-list{border-top:1px solid var(--line)}
+.open-row{display:flex;flex-direction:column;gap:10px;padding:14px 16px}
+.open-row+.open-row{border-top:1px solid var(--line)}
+.open-row-text{min-width:0}
+.open-row .btn{width:100%;min-height:48px}
+@media (min-width:520px){
+  .open-row{flex-direction:row;align-items:center;gap:12px}
+  .open-row-text{flex:1}
+  .open-row .btn{flex:none;width:auto;min-height:44px}
+}
+
+/* ----- segmented control ----- */
+.seg{display:flex;padding:3px;border-radius:12px;background:var(--tint)}
+.seg button{
+  flex:1;min-height:44px;min-width:0;padding:6px 8px;border-radius:9px;text-align:center;
+  font-size:15px;font-weight:500;color:var(--muted);transition:background-color .12s,color .12s;
+}
+.seg button[aria-pressed=true]{background:#fff;color:var(--koda);font-weight:600;box-shadow:0 1px 2px rgba(12,26,43,.05)}
+
+/* ----- schedule ----- */
+.days{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.day-head{display:flex;align-items:center;gap:14px;width:100%;padding:14px 14px 14px 14px;text-align:left;border-radius:var(--radius)}
+.day-tile{
+  flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;width:48px;height:52px;border-radius:12px;
+  background:var(--tint);color:var(--koda);line-height:1.1;
+}
+.day-tile b{font-size:19px;font-weight:700}
+.day-tile span{font-size:13px;font-weight:500}
+.day-info{flex:1;min-width:0}
+.day-name{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:17px;line-height:1.3;font-weight:600;color:var(--ink)}
+.day-sub{display:flex;flex-wrap:wrap;gap:0 12px;font-size:15px;line-height:1.4;color:var(--muted)}
+.day-head .i{flex:none;color:var(--koda-slate);transition:transform .15s}
+.day-head[aria-expanded=true] .i{transform:rotate(90deg)}
+.day .tasks{border:0;border-top:1px solid var(--line);box-shadow:none;border-radius:0 0 var(--radius) var(--radius)}
+.day-off{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px;padding:2px 14px;font-size:15px;color:var(--muted)}
+.day-off>:first-child{flex:none}
+
+/* ----- availability ----- */
+.wk-scroll{
+  display:flex;gap:8px;margin:14px calc(-1 * var(--gutter)) 16px;padding:2px var(--gutter);
+  overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;scroll-padding:0 var(--gutter);
+}
+.wk-scroll::-webkit-scrollbar{display:none}
+.wk-chip{
+  flex:none;min-height:60px;min-width:108px;padding:8px 12px;border-radius:12px;border:1px solid var(--line);background:#fff;text-align:left;
+  transition:background-color .12s,border-color .12s;
+}
+.wk-chip b{display:block;font-size:15px;line-height:1.3;font-weight:600;color:var(--ink);white-space:nowrap}
+.wk-chip span{display:flex;align-items:center;gap:4px;font-size:14px;line-height:1.4;color:var(--muted);white-space:nowrap}
+.wk-chip span svg{width:14px;height:14px;fill:none;stroke:var(--koda);stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+.wk-chip[aria-pressed=true]{background:var(--tint);border-color:var(--koda)}
+.wk-chip .is-danger{color:var(--danger);font-weight:500}
+.btn-pair{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.btn-pair .btn{flex:1 1 auto;width:auto;min-height:52px;font-size:15px;padding:10px 12px;white-space:nowrap}
+@media (max-width:479.98px){.due{display:block}}
+.status-line{margin-top:10px;font-size:15px;color:var(--muted)}
+.stepper-card{margin-top:16px;padding:16px 20px 18px}
+.stepper{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px}
+.step{
+  display:grid;place-items:center;flex:none;width:60px;height:60px;border-radius:50%;background:var(--tint);color:var(--koda);
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transition:background-color .12s;
+}
+.step:active{background:#DDE6EF}
+.step:disabled{color:#A9B5C2;background:var(--soft)}
+.step .i{stroke-width:2.2}
+.step-val{flex:1;min-width:0;text-align:center}
+.step-input{
+  width:100%;max-width:120px;min-height:44px;padding:0;border:0;background:none;text-align:center;
+  font-size:34px;line-height:1.15;font-weight:700;letter-spacing:-.02em;color:var(--ink);
+}
+.step-input:focus-visible{outline-offset:4px;border-radius:8px}
+.step-input::placeholder{color:#A9B5C2;opacity:1}
+.step-unit{display:block;font-size:14px;color:var(--muted)}
+.grid-wrap{margin-top:8px}
+.grid{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;background:#fff}
+.grid th,.grid td{padding:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#fff;font-weight:inherit}
+.grid thead th{position:sticky;top:var(--stick);z-index:5;border-top:1px solid var(--line);background:#fff}
+.grid tr>:first-child{width:42px;border-left:1px solid var(--line)}
+@media (min-width:360px){.grid tr>:first-child{width:50px}}
+.grid thead th:first-child{border-top-left-radius:12px}
+.grid thead th:last-child{border-top-right-radius:12px}
+.grid tbody tr:last-child th{border-bottom-left-radius:12px}
+.grid tbody tr:last-child td:last-child{border-bottom-right-radius:12px}
+.g-day,.g-hour,.g-cell{display:block;width:100%;text-align:center;touch-action:manipulation}
+.g-day{padding:7px 0 6px;line-height:1.15;color:var(--ink);border-radius:8px}
+.g-day b{display:block;font-size:13px;font-weight:600}
+.g-day span{display:block;font-size:15px;font-weight:600;color:var(--muted)}
+.g-hour{height:38px;font-size:13px;line-height:1.1;font-weight:500;color:var(--muted);white-space:nowrap}
+.g-hour .ap{display:block;font-size:13px}
+.g-cell{height:38px;background:#fff;transition:background-color .08s}
+.g-cell[aria-pressed=true]{background:var(--koda)}
+.g-cell:focus-visible,.g-hour:focus-visible,.g-day:focus-visible{outline-offset:-2px}
+.g-cell[aria-pressed=true]:focus-visible{outline-color:#fff}
+.grid td.off,.grid td.off .g-cell{background:var(--soft)}
+.grid th.off .g-day b,.grid th.off .g-day span{color:#9AA5B1}
+.grid tbody tr:last-child td:last-child .g-cell{border-bottom-right-radius:11px}
+@media (hover:hover){
+  .g-cell:not(:disabled):hover{background:var(--tint)}
+  .g-cell[aria-pressed=true]:not(:disabled):hover{background:#1F4366}
+}
+.grid-foot{
+  position:sticky;bottom:var(--floor);z-index:4;background:#fff;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;margin-top:0;padding:4px 0;
+}
+.grid-count{font-size:16px;font-weight:600;color:var(--ink)}
+.grid-note{margin-top:2px;font-size:15px;color:var(--muted)}
+.off-note{margin-top:8px;font-size:15px;color:var(--muted)}
+.done-card{padding:32px 20px;text-align:center}
+.done-card .lead,.empty p{text-wrap:balance}
+.done-card .title{margin-bottom:6px}
+.done-card .btn{margin-top:18px}
+
+/* ----- forms ----- */
+.field{display:block;margin-top:16px}
+.field:first-child{margin-top:0}
+.label{display:block;margin-bottom:6px;font-size:15px;font-weight:600;color:var(--ink)}
+.label .opt{font-weight:400;color:var(--muted)}
+.input{
+  display:block;width:100%;min-width:0;min-height:52px;padding:12px 14px;border:1px solid var(--edge);border-radius:12px;background:#fff;
+  font-size:17px;line-height:1.3;color:var(--ink);-webkit-appearance:none;appearance:none;
+}
+.input:focus{outline:2px solid var(--koda);outline-offset:-1px;border-color:var(--koda)}
+.input::placeholder{color:#7C8896;opacity:1}
+textarea.input{min-height:92px;resize:vertical;font-size:16px;line-height:1.4}
+input[type=date].input,input[type=time].input{text-align:left}
+input.input::-webkit-date-and-time-value{text-align:left}
+select.input{
+  padding-right:38px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23536779' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;background-size:18px;
+}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px}
+.two .input{padding-left:12px;padding-right:10px;font-size:16px}
+.two .field{margin-top:0}
+.form-err{margin-top:12px}
+.form-ok{margin-top:12px;font-size:15px;font-weight:500;color:var(--koda)}
+.form-btn{margin-top:16px}
+.off-card{margin-top:28px;padding:20px}
+.off-card .h2{margin-bottom:2px}
+.off-list{margin-top:18px;border-top:1px solid var(--line)}
+.off-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:60px;padding:8px 0;border-bottom:1px solid var(--line)}
+.off-row:last-child{border-bottom:0;padding-bottom:0}
+.off-row .btn{flex:none}
+
+/* ----- hours ----- */
+.total{margin-top:24px}
+.total-big{display:flex;align-items:baseline;flex-wrap:wrap;gap:0 10px}
+.total-num{font-size:44px;line-height:1.1;font-weight:700;letter-spacing:-.03em;color:var(--ink)}
+.total-word{font-size:17px;font-weight:500;color:var(--ink)}
+.total-last{margin-top:4px;font-size:15px;color:var(--muted)}
+.entries{margin-top:8px}
+.entry{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:68px;padding:12px 16px}
+.entry+.entry{border-top:1px solid var(--line)}
+.entry-text{flex:1;min-width:0}
+.entry-day{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;font-size:16px;font-weight:600;color:var(--ink)}
+.entry-time{font-size:15px;color:var(--muted)}
+.entry-time.danger{color:var(--danger)}
+.entry-note{margin-top:2px;font-size:14px;color:var(--muted)}
+.entry-hours{flex:none;text-align:right;font-size:17px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.month-head{margin:22px 0 8px;font-size:15px;font-weight:600;color:var(--muted)}
+
+/* ----- manage ----- */
+.mg-head{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
+.mg-seg{width:100%}
+@media (min-width:900px){
+  .mg-head{flex-direction:row;align-items:center;justify-content:space-between}
+  .mg-seg{width:360px}
+}
+.wk-switch{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.wk-switch .h2{text-align:center;flex:1;min-width:0}
+.wk-arrow{display:grid;place-items:center;flex:none;width:48px;height:48px;border-radius:12px;border:1px solid var(--line);color:var(--koda)}
+.wk-arrow:active{background:var(--soft)}
+.wk-arrow:disabled{color:#B5BFCA;background:var(--soft)}
+.wk-arrow.back svg{transform:rotate(180deg)}
+.on-clock{margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--tint);font-size:15px;color:var(--ink)}
+.on-clock b{font-weight:600}
+.on-clock.is-none{background:var(--soft);color:var(--muted)}
+.built{margin-top:8px;text-align:center;font-size:14px;color:var(--muted)}
+.mg-cols{display:grid;gap:16px;margin-top:16px;grid-template-columns:minmax(0,1fr)}
+.mg-col{display:flex;flex-direction:column;gap:12px;min-width:0}
+.mg-solo{display:flex;flex-direction:column;gap:12px;margin:16px auto 0;max-width:640px}
+@media (min-width:1180px){
+  .mg-cols{grid-template-columns:minmax(0,1fr) 350px;align-items:start}
+}
+.unc{padding:16px}
+.unc-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.unc-row{padding:14px 0;border-top:1px solid var(--line)}
+.unc-row:first-of-type{border-top:0}
+.unc-row:last-child{padding-bottom:0}
+.unc-title{font-size:17px;line-height:1.3;font-weight:600;color:var(--ink)}
+.unc-pick{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:10px}
+@media (min-width:360px){.unc-pick{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+.unc-pick .btn{grid-column:1/-1;width:100%;min-height:48px}
+.unc-more{margin-top:14px;min-height:48px}
+@media (min-width:560px){
+  .unc-pick{grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto}
+  .unc-pick .btn{grid-column:auto;width:auto;min-height:52px}
+}
+.mday-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:14px 16px 10px}
+.mgroup{border-top:1px solid var(--line)}
+.mgroup-head{display:flex;align-items:center;gap:10px;width:100%;min-height:60px;padding:10px 12px 10px 16px;text-align:left}
+.mgroup-head:focus-visible{outline-offset:-3px;border-radius:10px}
+.mg-who{flex:1;min-width:0}
+.mg-name{display:block;font-weight:600;color:var(--ink)}
+.mg-shift{display:block;font-size:14px;color:var(--muted)}
+.mg-count{flex:none;font-size:14px;color:var(--muted);white-space:nowrap}
+.mg-count .word{display:none}
+@media (min-width:380px){.mg-count .word{display:inline}}
+.mgroup-head .i{flex:none;color:var(--koda-slate);transition:transform .15s}
+.mgroup-head[aria-expanded=true] .i{transform:rotate(90deg)}
+.mtasks{padding:0 12px 8px 16px}
+.mtask{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.mstat{flex:none;display:grid;place-items:center;width:22px;height:22px;margin-top:1px;border-radius:50%;border:2px solid var(--edge)}
+.mstat svg{width:12px;height:12px;fill:none;stroke:#fff;stroke-width:3.4;stroke-linecap:round;stroke-linejoin:round;opacity:0}
+.mstat.is-done{background:var(--koda);border-color:var(--koda)}
+.mstat.is-done svg{opacity:1}
+.mstat.is-missed{border-style:dashed;border-color:var(--danger)}
+.mtask-text{flex:1;min-width:0}
+.mtask-title{font-size:16px;line-height:1.35;font-weight:600;color:var(--ink)}
+.mtask.done .mtask-title{color:var(--muted)}
+.mtask-meta{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;font-size:14px;line-height:1.4;color:var(--muted)}
+.mtask-note{display:flex;gap:6px;margin-top:4px;font-size:14px;line-height:1.4;color:var(--text)}
+.mtask-note svg{width:15px;height:15px;margin-top:2px;color:var(--koda-slate)}
+.mtask .btn{flex:none;width:auto;min-height:44px;padding:6px 12px;font-size:14px;border-radius:10px;border-color:var(--line);color:var(--koda)}
+.empty-line{padding:0 16px 14px;font-size:15px;color:var(--muted)}
+.people-card{padding:16px}
+.person-line{display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.person-line:first-of-type{margin-top:8px}
+.person-line:last-child{padding-bottom:0}
+.rank{display:grid;place-items:center;flex:none;width:32px;height:32px;border-radius:50%;background:var(--tint);color:var(--koda);font-size:14px;font-weight:600}
+.person-body{flex:1;min-width:0}
+.person-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.person-name{font-weight:600;color:var(--ink)}
+.person-meta{font-size:14px;line-height:1.45;color:var(--muted)}
+.person-note{margin-top:3px;font-size:14px;line-height:1.4;color:var(--text)}
+.side-card{padding:16px}
+.side-card .h3{margin-bottom:2px}
+.side-card .btn{margin-top:12px;width:100%}
+.mgr-two{display:grid;gap:20px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:1180px){.mgr-two{grid-template-columns:440px minmax(0,1fr);align-items:start}}
+.oo-form{padding:20px}
+.oo-form .h2{margin-bottom:14px}
+.group{margin-top:16px}
+.picks{display:flex;flex-wrap:wrap;gap:8px}
+.pick{
+  min-width:48px;min-height:48px;padding:6px 14px;border-radius:12px;border:1px solid var(--edge);background:#fff;text-align:center;
+  font-size:15px;font-weight:500;color:var(--ink);transition:background-color .12s,border-color .12s;
+}
+.pick-big{flex:1;font-size:17px;font-weight:600;min-height:52px}
+.pick-week{flex:1;min-height:60px;line-height:1.3}
+.pick small{display:block;font-size:13px;font-weight:500;color:var(--muted)}
+.pick[aria-pressed=true] small{color:var(--koda)}
+.pick[aria-pressed=true]{background:var(--tint);border-color:var(--koda);color:var(--koda);font-weight:600}
+.pick:disabled{color:#A0ABB7;background:var(--soft);border-color:var(--line)}
+.oo-list-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}
+.oo-row{padding:14px 16px}
+.oo-row+.oo-row{border-top:1px solid var(--line)}
+.oo-title{font-size:17px;line-height:1.3;font-weight:600;color:var(--ink)}
+.oo-row.is-done .oo-title{color:var(--muted)}
+.oo-details{margin-top:2px;font-size:15px;line-height:1.4;color:var(--muted)}
+.oo-status{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:6px;font-size:14px;line-height:1.4;color:var(--muted)}
+.oo-btns{display:flex;gap:8px;margin-top:10px}
+.oo-btns .btn{min-height:44px;padding:6px 14px;font-size:14px;border-color:var(--line);color:var(--koda)}
+/* Keeps the button in reach however far down the form the person is. */
+.dock{
+  position:sticky;bottom:var(--floor);z-index:3;margin:16px -20px -20px;padding:12px 20px;
+  background:#fff;border-top:1px solid var(--line);border-radius:0 0 var(--radius) var(--radius);
+}
+.dock .form-err{margin:0 0 10px}
+.sheet:has(.dock){padding-bottom:0}
+.sheet .dock{bottom:0;margin:16px -20px 0;padding-bottom:calc(16px + var(--safe-b));border-radius:0}
+.tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.tools .input{flex:1 1 180px;width:auto;max-width:280px}
+.tools .btn{flex:0 0 auto;min-height:52px}
+@media (max-width:359.98px){
+  .tools .input{flex-basis:100%;max-width:none}
+  .tools .btn{flex:1 1 100%}
+}
+.issues{margin-bottom:14px;padding:12px 14px;border-radius:12px;background:#FEF3F2;color:var(--danger);font-size:15px;font-weight:500}
+.hp{border-top:1px solid var(--line)}
+.hp:first-child{border-top:0}
+.hp-head{display:flex;align-items:center;gap:12px;width:100%;min-height:64px;padding:10px 12px 10px 16px;text-align:left}
+.hp-head:focus-visible{outline-offset:-3px;border-radius:12px}
+.hp-who{flex:1;min-width:0}
+.hp-name{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;font-weight:600;color:var(--ink)}
+.hp-sub{font-size:14px;color:var(--muted)}
+.hp-total{flex:none;font-size:19px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.hp-total small{font-size:14px;font-weight:500;color:var(--muted)}
+.hp-total.is-zero{font-weight:500;color:var(--muted)}
+.hp-head .i{flex:none;color:var(--koda-slate);transition:transform .15s}
+.hp-head[aria-expanded=true] .i{transform:rotate(90deg)}
+.hp-entries{padding:0 16px 14px}
+.hp-entry{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.hp-entry .btn{flex:none;width:auto;min-height:44px;padding:6px 12px;font-size:14px;border-radius:10px;border-color:var(--line);color:var(--koda)}
+.hp-add{margin-top:10px}
+
+/* ----- sign in ----- */
+.signin{max-width:440px;margin:0 auto;padding:calc(36px + var(--safe-t)) var(--gutter) calc(40px + var(--safe-b))}
+.signin-brand{display:flex;align-items:center;gap:10px;margin-bottom:30px;font-size:17px;font-weight:600;letter-spacing:-.01em;color:var(--ink)}
+.signin-brand svg{height:16px;width:auto;fill:var(--ink)}
+.signin .title{margin-bottom:18px}
+.signin .lead{margin:-10px 0 18px}
+.people{border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 1px 2px rgba(12,26,43,.05)}
+.people li+li{border-top:1px solid var(--line)}
+.person{display:flex;align-items:center;gap:14px;width:100%;min-height:68px;padding:12px 14px 12px 16px;text-align:left;font-size:18px;font-weight:500;color:var(--ink)}
+.person:active{background:var(--soft)}
+.person:focus-visible{outline-offset:-3px;border-radius:var(--radius)}
+.person .i{margin-left:auto;color:#A9B5C2}
+
+/* ----- sheet ----- */
+.sheet-wrap{
+  position:fixed;top:0;right:0;bottom:0;left:0;z-index:50;display:flex;align-items:flex-end;justify-content:center;
+  background:rgba(12,26,43,.38);animation:fade .15s ease;cursor:pointer;
+}
+.sheet{
+  width:100%;max-height:92vh;max-height:92dvh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;background:#fff;
+  border-radius:20px 20px 0 0;padding:6px 20px calc(24px + var(--safe-b));animation:rise .2s ease;cursor:auto;
+}
+.sheet-head{position:sticky;top:-6px;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:60px;margin:0 -8px 4px 0;background:#fff}
+.sheet-head .h2{flex:1;min-width:0}
+.sheet .btn+.btn{margin-top:8px}
+.sheet-person{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+@media (min-width:600px){
+  .sheet-wrap{align-items:center;padding:24px}
+  .sheet{width:440px;border-radius:20px;padding-bottom:24px}
+}
+@keyframes rise{from{transform:translateY(24px);opacity:.4}to{transform:none;opacity:1}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+
+/* ----- floating messages ----- */
+#float{
+  position:fixed;left:0;right:0;bottom:calc(var(--bar) + var(--safe-b) + 12px);z-index:40;
+  display:flex;flex-direction:column;align-items:center;gap:8px;padding:0 var(--gutter);pointer-events:none;
+}
+.nudge{pointer-events:auto}   /* a message can sit over a button for a few seconds, and a tap still reaches the button */
+body:has(.oo-form .dock) #float{bottom:calc(var(--floor) + 92px)}
+.toast{max-width:440px;padding:12px 16px;border-radius:12px;background:var(--koda);color:#fff;font-size:15px;font-weight:500;line-height:1.35;text-align:center}
+.pill{padding:6px 14px;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--muted);font-size:14px;font-weight:500;box-shadow:0 1px 2px rgba(12,26,43,.05)}
+.nudge{
+  display:flex;align-items:center;gap:8px;width:100%;max-width:440px;padding:8px 6px 8px 16px;border-radius:14px;
+  background:var(--tint);border:1px solid #D5DFE9;
+}
+.nudge-text{flex:1;min-width:0;font-size:15px;font-weight:600;color:var(--koda)}
+.nudge .btn{flex:none;width:auto;min-height:44px;padding:6px 14px;font-size:15px;border-radius:12px}
+@media (min-width:900px){#float{left:220px;bottom:24px}}
+
+/* ----- desktop, after the rules it changes ----- */
+@media (min-width:600px){
+  .wk-scroll{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:14px 0 16px;padding:0;overflow:visible}
+  .wk-chip{min-width:0}
+}
+@media (min-width:900px){
+  .wk-switch{justify-content:center}
+  .wk-switch .h2{flex:0 1 180px}
+}
+
+/* ----- a mouse gets a little feedback too ----- */
+@media (hover:hover){
+  .btn-primary:not(:disabled):not(:active):hover{background:#1D3F63}
+  .btn-soft:not(:active):hover{background:#E6EDF4}
+  .btn-line:not(:disabled):not(:active):hover,.wk-arrow:not(:disabled):hover,.icon-btn:hover{background:var(--soft)}
+  .pick:not(:disabled):not([aria-pressed=true]):hover,.wk-chip:not([aria-pressed=true]):hover{background:var(--soft)}
+  .person:hover,.day-head:hover,.open-toggle:hover,.mgroup-head:hover,.hp-head:hover{background:var(--soft);border-radius:12px}
+  .seg button:not([aria-pressed=true]):hover{color:var(--koda)}
+}
+
+/* ----- loading ----- */
+.skel{border-radius:12px;background:var(--soft)}
+.skel-line{height:18px;margin-bottom:10px}
+.skel-card{height:88px;margin-bottom:12px;border-radius:var(--radius)}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="sheet"></div>
+<div id="float" aria-live="polite"></div>
+<noscript><p style="padding:24px">Koda Operations needs JavaScript turned on.</p></noscript>
+
+<script>
+'use strict';
+
+const PROD_API_URL = 'https://script.google.com/macros/s/AKfycbyoAtgvDeIY5PzC6THcHqC3h-rPzfNniLaWN_Rkrbq_jt6Y0GNEqCMRh3qs9f5FnIBOAg/exec'; // DEPLOY: the one line to fill in, with the Apps Script web app URL
+
+const API_URL = location.hostname === 'localhost' ? '/api' : PROD_API_URL;
+
+/* ======================================================================= helpers ======= */
+
+const $ = (selector, root) => (root || document).querySelector(selector);
+const DAY_LONG = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const STORE_PREFIX = 'koda-ops.v1.';
+const SCROLL = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+const HAS_MOUSE = !!window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches; // a keyboard is already out, so putting the cursor somewhere costs nothing
+
+const store = {
+  get(key, fallback) {
+    try {
+      const raw = localStorage.getItem(STORE_PREFIX + key);
+      return raw === null ? (fallback === undefined ? null : fallback) : JSON.parse(raw);
+    } catch (err) {
+      return fallback === undefined ? null : fallback;
+    }
+  },
+  /* True if it stuck. If the phone is full, everything else in here can be fetched again and a
+     waiting tap can't, so the copies go and the tap gets one more try. */
+  set(key, value) {
+    const text = JSON.stringify(value);
+    try {
+      localStorage.setItem(STORE_PREFIX + key, text);
+      return true;
+    } catch (err) {
+      if (key !== 'queue') return false;
+    }
+    store.keys().filter((one) => /^(boot|avail|board|mhours)\./.test(one)).forEach((one) => store.del(one));
+    try {
+      localStorage.setItem(STORE_PREFIX + key, text);
+      return true;
+    } catch (err) {
+      return false;
+    }
+  },
+  del(key) {
+    try {
+      localStorage.removeItem(STORE_PREFIX + key);
+    } catch (err) { /* blocked */ }
+  },
+  keys() {
+    try {
+      return Object.keys(localStorage).filter((key) => key.startsWith(STORE_PREFIX)).map((key) => key.slice(STORE_PREFIX.length));
+    } catch (err) {
+      return [];
+    }
+  },
+};
+
+/* Where you are on the page. It survives a reload, which phones do to a tab whenever they like,
+   but a fresh visit starts over on the first tab. */
+const place = {
+  get(key) {
+    try { return sessionStorage.getItem(STORE_PREFIX + key); } catch (err) { return null; }
+  },
+  set(key, value) {
+    try { sessionStorage.setItem(STORE_PREFIX + key, value); } catch (err) { /* blocked */ }
+  },
+};
+
+/* Everything that goes on the page comes through html``, which escapes every value unless it
+   is already html``. Nothing from the server can turn into markup. */
+class Safe {
+  constructor(text) { this.text = text; }
+}
+function esc(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function piece(value) {
+  if (value === null || value === undefined || value === false || value === true) return '';
+  if (value instanceof Safe) return value.text;
+  if (Array.isArray(value)) return value.map(piece).join('');
+  return esc(value);
+}
+function html(strings, ...values) {
+  let out = strings[0];
+  values.forEach((value, index) => {
+    out += piece(value) + strings[index + 1];
+  });
+  return new Safe(out);
+}
+
+/* Updates live elements to match new markup, so focus, typing, scroll and transitions survive
+   a re-render. Children with data-key keep their identity when lists change. */
+function sameKind(a, b) {
+  if (a.nodeType !== b.nodeType) return false;
+  if (a.nodeType === 1) return a.tagName === b.tagName && !a.hasAttribute('data-key') && !b.hasAttribute('data-key');
+  return true;
+}
+function morphElement(from, to) {
+  for (const attr of Array.from(from.attributes)) {
+    if (!to.hasAttribute(attr.name)) from.removeAttribute(attr.name);
+  }
+  for (const attr of Array.from(to.attributes)) {
+    if (from.getAttribute(attr.name) !== attr.value) from.setAttribute(attr.name, attr.value);
+  }
+  if (from.tagName === 'TEXTAREA') {
+    if (from.value !== to.value) from.value = to.value;
+    return;
+  }
+  morphChildren(from, to);
+  if (from.tagName === 'INPUT' || from.tagName === 'SELECT') {
+    if (from.value !== to.value) from.value = to.value;
+  }
+}
+function morphChildren(from, to) {
+  const keyed = new Map();
+  for (const child of Array.from(from.children)) {
+    if (child.hasAttribute('data-key')) keyed.set(child.getAttribute('data-key'), child);
+  }
+  let current = from.firstChild;
+  let incoming = to.firstChild;
+  while (incoming) {
+    const following = incoming.nextSibling;
+    const key = incoming.nodeType === 1 ? incoming.getAttribute('data-key') : null;
+    let match = null;
+    if (key !== null && keyed.has(key)) {
+      match = keyed.get(key);
+      keyed.delete(key);
+    } else if (key === null && current && sameKind(current, incoming)) {
+      match = current;
+    }
+    if (match) {
+      if (match === current) current = current.nextSibling;
+      else from.insertBefore(match, current);
+      if (match.nodeType === 1) morphElement(match, incoming);
+      else if (match.nodeValue !== incoming.nodeValue) match.nodeValue = incoming.nodeValue;
+    } else {
+      from.insertBefore(incoming, current);
+    }
+    incoming = following;
+  }
+  while (current) {
+    const next = current.nextSibling;
+    from.removeChild(current);
+    current = next;
+  }
+}
+function mount(element, content) {
+  const template = document.createElement('template');
+  template.innerHTML = piece(content).replace(/>\s*\n\s*</g, '><').trim();
+  morphChildren(element, template.content);
+}
+
+function firstName(name) {
+  return String(name || '').trim().split(/\s+/)[0];
+}
+function initial(name) {
+  return (String(name || '').trim().charAt(0) || '?').toUpperCase();
+}
+function plural(count, one, many) {
+  return count + ' ' + (count === 1 ? one : many || one + 's');
+}
+function minutesText(minutes) {
+  const total = Math.round(Number(minutes) || 0);
+  if (total < 60) return total + ' min';
+  const hours = Math.floor(total / 60);
+  const left = total % 60;
+  return hours + (hours === 1 ? ' hr' : ' hrs') + (left ? ' ' + left + ' min' : '');
+}
+function hoursNumber(hours) {
+  return String(Math.round((Number(hours) || 0) * 100) / 100);
+}
+function hoursWord(hours) {
+  return Number(hours) === 1 ? 'hour' : 'hours';
+}
+function hrs(hours) {
+  return hoursNumber(hours) + (Number(hours) === 1 ? ' hr' : ' hrs');
+}
+function nameList(names) {
+  const firsts = names.map(firstName);
+  if (firsts.length < 2) return firsts.join('');
+  return firsts.slice(0, -1).join(', ') + ' and ' + firsts[firsts.length - 1];
+}
+function addDays(date, count) {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + count)).toISOString().slice(0, 10);
+}
+function monthDay(date) {
+  const parts = date.split('-').map(Number);
+  return MONTHS[parts[1] - 1] + ' ' + parts[2];
+}
+/* Weeks start on a Monday, and a link can say anything. */
+function isMonday(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return false;
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay() === 1;
+}
+/* '9:02 AM' <-> minutes since midnight <-> '09:02'. Server labels are Denver time already. */
+function labelToMinutes(label) {
+  const match = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(String(label || '').trim());
+  if (!match) return null;
+  let hour = Number(match[1]) % 12;
+  if (/pm/i.test(match[3])) hour += 12;
+  return hour * 60 + Number(match[2]);
+}
+function minutesToLabel(total) {
+  const wrapped = ((Math.floor(total) % 1440) + 1440) % 1440;
+  const hour = Math.floor(wrapped / 60);
+  return ((hour + 11) % 12) + 1 + ':' + String(wrapped % 60).padStart(2, '0') + ' ' + (hour < 12 ? 'AM' : 'PM');
+}
+function labelToClock(label) {
+  const total = labelToMinutes(label);
+  if (total === null) return '';
+  return String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
+}
+function clockToLabel(clock) {
+  const parts = String(clock).split(':').map(Number);
+  return minutesToLabel(parts[0] * 60 + parts[1]);
+}
+function hourLabel(hour) {
+  return ((hour + 11) % 12) + 1 + ' ' + (hour < 12 ? 'AM' : 'PM');
+}
+function deadlineLong(label) {
+  return String(label || '').replace(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/, (day) => DAY_LONG[day]).replace(/ (AM|PM)/, (match, half) => '\u00A0' + half);
+}
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+function hoursBetween(startLabel, endLabel, canRunPastMidnight) {
+  const start = labelToMinutes(startLabel);
+  let end = labelToMinutes(endLabel);
+  if (start === null || end === null) return null;
+  if (canRunPastMidnight && end <= start) end += 1440;
+  if (end < start) return null;
+  return Math.round(((end - start) / 60) * 100) / 100;
+}
+
+/* ========================================================================= icons ======= */
+
+function icon(paths) {
+  return new Safe('<svg class="i" viewBox="0 0 24 24" aria-hidden="true">' + paths + '</svg>');
+}
+const I = {
+  today: icon('<path d="M8.5 11.5l3 3 8.5-9"/><path d="M20.5 12.5V18a2.5 2.5 0 0 1-2.5 2.5H6A2.5 2.5 0 0 1 3.5 18V6A2.5 2.5 0 0 1 6 3.5h9"/>'),
+  schedule: icon('<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M8 3v4M16 3v4M3.5 10h17"/>'),
+  availability: icon('<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>'),
+  hours: icon('<circle cx="12" cy="12" r="8.75"/><path d="M12 7v5.25l3.25 2"/>'),
+  manage: icon('<path d="M4 7h9M18 7h2M4 12h2M11 12h9M4 17h7M16 17h4"/><circle cx="15.5" cy="7" r="2.25"/><circle cx="8.5" cy="12" r="2.25"/><circle cx="13.5" cy="17" r="2.25"/>'),
+  chevron: icon('<path d="M9.5 6l6 6-6 6"/>'),
+  plus: icon('<path d="M12 5.5v13M5.5 12h13"/>'),
+  minus: icon('<path d="M5.5 12h13"/>'),
+  close: icon('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>'),
+  check: new Safe('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'),
+  note: icon('<path d="M20.5 14.5a2 2 0 0 1-2 2H8l-4.5 4V5.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/>'),
+  badgeCheck: icon('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
+  sun: icon('<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6L7 7M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/>'),
+};
+const KX = new Safe('<svg viewBox="0 0 1862 1078" aria-hidden="true"><path d="M0 0h316l539 539-539 539H0l539-539zM566 0h316l381 381 382-381h316l-540 539 540 539h-316l-382-381-381 381H566l540-539z"/></svg>');
+
+/* ==================================================================== talking to it ===== */
+
+class NetworkError extends Error {}
+
+async function send(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, Object.assign({ redirect: 'follow', cache: 'no-store', signal: controller.signal }, options));
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (err) {
+      throw new NetworkError('The answer was not JSON');
+    }
+    if (!data || typeof data !== 'object') throw new NetworkError('The answer was empty');
+    return data;
+  } catch (err) {
+    throw err instanceof NetworkError ? err : new NetworkError(String((err && err.message) || err));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+function apiRead(action, params) {
+  const query = new URLSearchParams(Object.assign({ action }, params || {}));
+  return send(API_URL + '?' + query.toString(), { method: 'GET' }, 30000);
+}
+/* Plain text, so the browser skips the CORS preflight that Apps Script can't answer. */
+function apiWrite(action, body) {
+  return send(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ action }, body || {})) }, 60000);
+}
+const OFFLINE_MESSAGE = "Couldn't reach the server. Check your connection and try again.";
+
+/* ========================================================================= state ======= */
+
+const TABS = [
+  { id: 'today', label: 'Today', icon: I.today },
+  { id: 'schedule', label: 'Schedule', icon: I.schedule },
+  { id: 'availability', label: 'Availability', tiny: 'Avail.', icon: I.availability },
+  { id: 'hours', label: 'Hours', icon: I.hours },
+];
+const MANAGE_TAB = { id: 'manage', label: 'Manage', icon: I.manage };
+
+const S = {
+  me: store.get('me'),
+  code: store.get('code', ''),
+  names: store.get('names'),
+  namesError: '',
+  signInError: '',
+  codeSkipped: false,
+  boot: null,          // the last thing the server said
+  bootAt: 0,           // when it said it, by this device's clock
+  view: null,          // boot with anything still waiting in the queue laid on top
+  bootSeq: 0,
+  syncFailed: false,
+  tab: 'today',
+  tabChosen: false,    // a link or a tap picked the tab, so don't land on the default
+  sheet: null,
+  toast: '',
+  nudge: false,
+  forms: {},           // every input on the site reads from and writes to here
+  busy: {},
+  errors: {},
+  noteOpen: null,
+  openTasksOpen: false,
+  schedWeek: 'thisWeek',
+  schedOpen: {},
+  tabLoadedFor: null,
+  avail: { week: null, chosen: false, data: {}, forms: {}, success: null, loading: {}, error: '' },
+  mgr: {
+    sub: ['week', 'oneoffs', 'hours'].indexOf(place.get('mgrSub')) >= 0 ? place.get('mgrSub') : 'week',
+    weekOf: null,
+    boards: {},
+    boardErr: '',
+    month: null,
+    hours: {},
+    hoursErr: '',
+    open: {},
+    outbox: [],
+    added: '',           // what happened to the last one-off added
+    uncAll: false,       // the whole uncovered list is showing
+  },
+};
+
+function form(name) {
+  if (!S.forms[name]) S.forms[name] = {};
+  return S.forms[name];
+}
+
+/* ============================================================== the tap queue ========== */
+
+/* Check marks, clock taps and the like change the screen right away and land here. The queue
+   lives in localStorage, sends one at a time in order, and retries until the server has
+   answered, so a tap survives a dead connection, a reload and a closed tab. */
+const TAB_ID = place.get('tabId') || uid(); // the same across a reload, so a reload never waits on its own lease
+place.set('tabId', TAB_ID);
+const LEASE_MS = 70000; // longer than a write can take
+const BACKOFF_MS = [2000, 4000, 8000, 15000, 30000];
+
+const Q = {
+  items: store.get('queue', []),
+  kept: true,      // the stored copy is good. If it couldn't be saved, memory is the only copy, so don't read over it
+  gen: 0,          // goes up each time a write lands, so a read that started earlier can be spotted
+  sending: false,
+  timer: null,
+  tries: 0,
+  lastLanded: 0,
+  load() {
+    if (this.kept) this.items = store.get('queue', this.items);
+    return this.items;
+  },
+  save() {
+    this.kept = store.set('queue', this.items);
+  },
+  add(action, body, extra) {
+    this.load();
+    this.items.push(Object.assign({ qid: uid(), action, body, t: Date.now() }, extra || {}));
+    this.save();
+    refreshView();
+    render();
+    this.pump();
+  },
+  /* One tab sends at a time, so a queue shared by two tabs still goes out once and in order. */
+  takeLease() {
+    const lease = store.get('lease');
+    const now = Date.now();
+    if (lease && lease.tab !== TAB_ID && lease.until > now) return false;
+    store.set('lease', { tab: TAB_ID, until: now + LEASE_MS });
+    return true;
+  },
+  dropLease() {
+    const lease = store.get('lease');
+    if (lease && lease.tab === TAB_ID) store.del('lease');
+  },
+  wait(ms) {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => this.pump(), ms);
+  },
+  retryLater() {
+    this.wait(BACKOFF_MS[Math.min(this.tries, BACKOFF_MS.length - 1)]);
+    this.tries += 1;
+  },
+  nudgeNow() {
+    this.tries = 0;
+    this.pump();
+  },
+  async pump() {
+    if (this.sending) return;
+    this.sending = true;
+    clearTimeout(this.timer);
+    let finished = false;
+    let landed = false;
+    try {
+      for (;;) {
+        this.load();
+        if (!this.items.length) {
+          finished = true;
+          break;
+        }
+        if (!this.takeLease()) {
+          this.wait(3000);
+          break;
+        }
+        const item = this.items[0];
+        let reply;
+        try {
+          reply = await apiWrite(item.action, item.body);
+        } catch (err) {
+          this.retryLater();
+          break;
+        }
+        if (reply.ok === false && reply.retry) {
+          this.retryLater();
+          break;
+        }
+        this.items = this.load().filter((other) => other.qid !== item.qid);
+        this.save();
+        this.gen += 1;
+        this.tries = 0;
+        this.lastLanded = Date.now();
+        landed = true;
+        if (reply.ok === false) writeRefused(item, reply);
+        else writeLanded(item, reply);
+        refreshView();
+        render();
+      }
+    } finally {
+      this.sending = false;
+    }
+    if (finished) {
+      this.dropLease();
+      if (landed) syncSoon(); // only after real work: an empty queue must never ask for a refresh, or refreshing would loop forever
+    }
+    renderFloat();
+  },
+};
+
+function writeLanded(item, reply) {
+  if (!S.boot || item.body.name !== S.boot.me.name) return;
+  applyWrite(S.boot, item);
+  if (item.action === 'clockIn' && reply.clock && reply.clock.entry) {
+    // The line shown while this waited now has its real id, so a clock-out right behind it can find it.
+    const line = S.boot.hours.entries.find((entry) => entry.id === 'waiting-' + item.qid);
+    if (line) Object.assign(line, reply.clock.entry);
+  }
+  if (reply.clock) S.boot.clock = reply.clock;
+  if (item.action === 'taskToggle') eachTask(S.boot, item.body.id, (task) => { task.doneAt = reply.doneAt || ''; });
+  if (item.action === 'timeOffRemove' && reply.restored && reply.restored.length) showToast('Your ' + plural(reply.restored.length, 'task') + (reply.restored.length === 1 ? ' is' : ' are') + ' back on your list.');
+  store.set('boot.' + S.boot.me.name, { data: S.boot, at: S.bootAt });
+}
+function writeRefused(item, reply) {
+  showToast(reply.error || "That couldn't be saved.");
+  syncSoon(50);
+}
+
+function eachTask(view, id, change) {
+  const lists = [view.today.tasks, view.today.openTasks];
+  ['thisWeek', 'nextWeek'].forEach((week) => {
+    view.week[week].days.forEach((day) => lists.push(day.tasks));
+  });
+  lists.forEach((list) => list.forEach((task) => {
+    if (task.id === id) change(task);
+  }));
+}
+function addToTotal(view, date, hours) {
+  if (!hours) return;
+  const month = date.slice(0, 7);
+  if (month === view.now.date.slice(0, 7)) view.hours.monthTotal = Math.round((view.hours.monthTotal + hours) * 100) / 100;
+  else view.hours.lastMonthTotal = Math.round((view.hours.lastMonthTotal + hours) * 100) / 100;
+}
+
+/* What a queued write means for the screen, laid over what the server last said. */
+function applyWrite(view, item) {
+  const body = item.body;
+  switch (item.action) {
+    case 'taskToggle':
+      eachTask(view, body.id, (task) => {
+        task.done = !!body.done;
+        task.doneAt = body.done ? task.doneAt || item.label || '' : '';
+      });
+      break;
+    case 'taskNote':
+      eachTask(view, body.id, (task) => { task.note = body.note; });
+      break;
+    case 'taskClaim': {
+      const index = view.today.openTasks.findIndex((task) => task.id === body.id);
+      if (index < 0) break;
+      const task = view.today.openTasks.splice(index, 1)[0];
+      if (!view.today.tasks.some((other) => other.id === task.id)) view.today.tasks.push(task);
+      ['thisWeek', 'nextWeek'].forEach((week) => {
+        view.week[week].days.forEach((day) => {
+          if (day.date === task.date && !day.tasks.some((other) => other.id === task.id)) day.tasks.push(Object.assign({}, task));
+        });
+      });
+      break;
+    }
+    case 'clockIn':
+      if (view.clock.status !== 'in') {
+        const entry = { id: 'waiting-' + item.qid, date: tapDate(view, item.t), dayLabel: item.dayLabel || '', in: item.label || '', out: '', hours: null, flag: '', note: '', t: item.t };
+        view.clock.status = 'in';
+        view.clock.entry = entry;
+        view.hours.entries.unshift(Object.assign({}, entry));
+      }
+      break;
+    case 'clockOut': {
+      const open = view.clock.entry;
+      if (open) {
+        const line = view.hours.entries.find((entry) => entry.id === open.id);
+        if (line) {
+          line.out = item.label || '';
+          line.hours = hoursBetween(line.in, line.out, line.date < view.now.date);
+          addToTotal(view, line.date, line.hours);
+        }
+      }
+      view.clock.status = 'out';
+      view.clock.entry = null;
+      break;
+    }
+    case 'clockFix': {
+      view.clock.stale = view.clock.stale.filter((entry) => entry.id !== body.id);
+      if (view.clock.entry && view.clock.entry.id === body.id) { // already finished, and only just noticed
+        view.clock.status = 'out';
+        view.clock.entry = null;
+      }
+      const line = view.hours.entries.find((entry) => entry.id === body.id);
+      if (line && !line.out) {
+        line.out = clockToLabel(body.out);
+        line.flag = 'fixed';
+        line.hours = hoursBetween(line.in, line.out, true);
+        addToTotal(view, line.date, line.hours);
+      }
+      break;
+    }
+    case 'timeOffRemove':
+      view.timeOff = view.timeOff.filter((off) => off.id !== body.id);
+      break;
+    default:
+  }
+}
+
+function refreshView() {
+  if (!S.boot) {
+    S.view = null;
+    return;
+  }
+  const view = JSON.parse(JSON.stringify(S.boot));
+  Q.items.forEach((item) => {
+    if (item.body && item.body.name === view.me.name) applyWrite(view, item);
+  });
+  S.view = view;
+}
+
+function saveStatus() {
+  if (!Q.items.length) return '';
+  const waiting = Date.now() - Math.max(Q.items[0].t, Q.lastLanded);
+  if (waiting > 30000) return "Couldn't save yet. We'll keep trying.";
+  if (waiting > 5000) return 'Saving...';
+  return '';
+}
+
+/* Minutes since midnight on the server's clock right now, so a tap can show a time at once. */
+function serverMinutes() {
+  if (!S.boot) return null;
+  return S.boot.now.hour * 60 + S.boot.now.minute + (Date.now() - S.bootAt) / 60000;
+}
+/* The server's day has rolled over since this was saved. */
+function dayIsOver() {
+  const minutes = serverMinutes();
+  return minutes !== null && minutes >= 1440;
+}
+/* And the refresh hasn't come back yet. */
+function staleDay() {
+  return dayIsOver() && !S.syncFailed;
+}
+/* The date a tap happened on: the day the last answer was on, plus any midnights since. */
+function tapDate(view, t) {
+  const minutes = S.boot.now.hour * 60 + S.boot.now.minute + (t - S.bootAt) / 60000;
+  return addDays(view.now.date, Math.floor(minutes / 1440));
+}
+function nowLabel() {
+  const minutes = serverMinutes();
+  return minutes === null ? '' : minutesToLabel(minutes);
+}
+
+/* ========================================================================= data ======== */
+
+let syncTimer = null;
+function syncSoon(ms) {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(refreshAll, ms === undefined ? 1200 : ms);
+}
+
+async function loadNames() {
+  try {
+    const reply = await apiRead('names');
+    if (reply.ok === false) {
+      S.namesError = reply.error;
+    } else {
+      S.names = reply.people;
+      S.namesError = '';
+      store.set('names', S.names);
+    }
+  } catch (err) {
+    if (!S.names) S.namesError = "Can't reach the server right now.";
+  }
+  render();
+}
+
+let lastRefresh = 0;
+const RETRY_REFRESH_MS = 30000;
+async function loadBoot() {
+  if (!S.me) return;
+  lastRefresh = Date.now();
+  const name = S.me;
+  const gen = Q.gen;
+  const seq = ++S.bootSeq;
+  let reply;
+  try {
+    reply = await apiRead('boot', { name });
+  } catch (err) {
+    if (seq === S.bootSeq) {
+      S.syncFailed = true;
+      syncSoon(RETRY_REFRESH_MS);
+      render();
+    }
+    return;
+  }
+  if (name !== S.me || seq !== S.bootSeq) return;
+  if (reply.ok === false) {
+    if (reply.retry) {
+      S.syncFailed = true;
+      syncSoon(RETRY_REFRESH_MS);
+      render();
+    } else {
+      signOut(reply.error);
+    }
+    return;
+  }
+  if (gen !== Q.gen) {
+    loadBoot(); // a write landed while this read was out, so it may have missed it
+    return;
+  }
+  if (reply.me.name !== S.me) {
+    S.me = reply.me.name;
+    store.set('me', S.me);
+  }
+  const newDay = !!S.boot && S.boot.now.date !== reply.now.date;
+  S.boot = reply;
+  S.bootAt = Date.now();
+  S.syncFailed = false;
+  store.set('boot.' + S.me, { data: reply, at: S.bootAt });
+  refreshView();
+  tidyStore(reply.now.date);
+  afterBoot();
+  if (S.tab === 'availability') followFirstWeek();
+  if (newDay) {
+    // Everything worked out from the old copy starts over: Monday shows the new week, the 1st the new month.
+    S.mgr.weekOf = null;
+    S.mgr.month = null;
+    loadTab();
+  }
+  render();
+}
+
+function afterBoot() {
+  const view = S.view;
+  if (!view) return;
+  if (!S.tabChosen) {
+    S.tab = view.me.manager ? 'manage' : 'today';
+    S.tabChosen = true;
+  }
+  if (S.tab === 'manage' && !view.me.manager) S.tab = 'today';
+  place.set('tab', S.tab);
+  // The tab's own data, once we know who this is. After that, the tabs and refreshIfDue keep it fresh.
+  if (S.tabLoadedFor !== S.me) {
+    S.tabLoadedFor = S.me;
+    loadTab();
+  }
+}
+function loadTab() {
+  if (S.tab === 'availability') loadAvailabilityTab();
+  if (S.tab === 'manage') loadManage();
+}
+
+function refreshAll() {
+  if (!S.me) return;
+  if (!document.hidden) loadBoot();
+  Q.nudgeNow();
+}
+
+/* Old copies of weeks and months nobody will look at again, so they can't fill up a phone over the years. */
+let storeTidied = false;
+function tidyStore(today) {
+  if (storeTidied) return;
+  storeTidied = true;
+  const cutoff = addDays(today, -60);
+  store.keys().forEach((key) => {
+    const week = /^(?:board|avail\..+|draft\..+)\.(\d{4}-\d{2}-\d{2})$/.exec(key);
+    const month = /^mhours\.(\d{4}-\d{2})$/.exec(key);
+    if ((week && week[1] < cutoff) || (month && month[1] < cutoff.slice(0, 7))) store.del(key);
+  });
+}
+
+/* One read of a thing at a time. Asking again while one is out shares its answer, unless
+   something just changed (fresh), which sends one more once it's back. */
+const reads = {};
+function readOnce(key, fresh, work) {
+  const running = reads[key];
+  if (running) {
+    if (fresh) running.again = true;
+    return running.done;
+  }
+  const read = { again: false, done: null };
+  reads[key] = read;
+  read.done = (async () => {
+    try {
+      do {
+        read.again = false;
+        await work();
+      } while (read.again);
+    } finally {
+      delete reads[key];
+    }
+  })();
+  return read.done;
+}
+
+/* Availability, one week at a time. */
+function availFirstWeek(view) {
+  const weeks = view.availability.weeks.filter((week) => week.weekOf !== view.week.thisWeek.weekOf); // a week under way is there if they want it, but it's not where to land
+  const first = weeks.find((week) => !week.past || week.status === 'missing');
+  return (first || weeks[0]).weekOf;
+}
+function loadAvailabilityTab() {
+  const view = S.view;
+  if (!view || view.me.type !== 'Flexible') return;
+  if (!S.avail.week || S.avail.week < view.week.thisWeek.weekOf) S.avail.week = availFirstWeek(view);
+  loadAvailabilityWeek(S.avail.week);
+}
+/* Nobody picked this week, they just landed on it. If the deadlines have moved on since (an old
+   copy of the page, or a phone left open past Friday morning), land on the right one. */
+function followFirstWeek() {
+  const view = S.view;
+  if (!view || view.me.type !== 'Flexible' || !S.avail.week || S.avail.chosen || S.avail.success) return;
+  const first = availFirstWeek(view);
+  const current = availForm(S.avail.week);
+  if (first === S.avail.week || (current && current.dirty)) return;
+  S.avail.week = first;
+  loadAvailabilityWeek(first);
+}
+function availForm(weekOf) {
+  return S.avail.forms[weekOf] || null;
+}
+function draftKey(weekOf) {
+  return 'draft.' + S.me + '.' + weekOf;
+}
+function setAvailForm(weekOf, data) {
+  const existing = S.avail.forms[weekOf];
+  if (existing && existing.dirty) return;
+  const draft = store.get(draftKey(weekOf));
+  if (draft && draft.base === data.submittedAt) {
+    S.avail.forms[weekOf] = { slots: draft.slots, hoursWanted: draft.hoursWanted, notes: draft.notes, dirty: true, editing: true, message: '', error: '' };
+    return;
+  }
+  if (draft) store.del(draftKey(weekOf)); // saved since, from somewhere else
+  S.avail.forms[weekOf] = {
+    slots: JSON.parse(JSON.stringify(data.slots || {})),
+    hoursWanted: data.none ? null : data.hoursWanted,
+    notes: data.notes || '',
+    dirty: false,
+    editing: existing ? existing.editing : false,
+    message: existing ? existing.message : '',
+    error: existing ? existing.error : '',
+  };
+}
+function saveDraft(weekOf) {
+  const data = S.avail.data[weekOf];
+  const current = S.avail.forms[weekOf];
+  if (!data || !current) return;
+  current.dirty = true;
+  store.set(draftKey(weekOf), { slots: current.slots, hoursWanted: current.hoursWanted, notes: current.notes, base: data.submittedAt });
+}
+async function loadAvailabilityWeek(weekOf) {
+  const key = 'avail.' + S.me + '.' + weekOf;
+  if (!S.avail.data[weekOf]) {
+    const cached = store.get(key);
+    if (cached) {
+      S.avail.data[weekOf] = cached;
+      setAvailForm(weekOf, cached);
+      render();
+    }
+  }
+  if (S.avail.loading[weekOf]) return;
+  S.avail.loading[weekOf] = true;
+  const name = S.me;
+  try {
+    const reply = await apiRead('availability', { name, weekOf });
+    if (name !== S.me) return;
+    if (reply.ok === false) {
+      if (!S.avail.data[weekOf]) S.avail.error = reply.error;
+    } else {
+      S.avail.data[weekOf] = reply;
+      S.avail.error = '';
+      store.set(key, reply);
+      setAvailForm(weekOf, reply);
+    }
+  } catch (err) {
+    if (name === S.me && !S.avail.data[weekOf]) S.avail.error = OFFLINE_MESSAGE;
+  } finally {
+    delete S.avail.loading[weekOf];
+  }
+  render();
+}
+
+/* Manager reads go by POST, so the code never sits in a URL. */
+function wrongCode(reply) {
+  if (reply && reply.ok === false && /manager code isn't right|manager code hasn't/i.test(reply.error || '')) {
+    forgetCode();
+    return true;
+  }
+  return false;
+}
+function forgetCode() {
+  S.code = '';
+  store.del('code');
+  store.keys().filter((key) => /^(board|mhours)\./.test(key)).forEach((key) => store.del(key));
+  S.mgr.boards = {};
+  S.mgr.hours = {};
+}
+function loadBoard(weekOf, fresh) {
+  if (!S.code) return Promise.resolve();
+  const key = 'board.' + weekOf;
+  if (!S.mgr.boards[weekOf]) {
+    const cached = store.get(key);
+    if (cached) {
+      S.mgr.boards[weekOf] = cached;
+      render();
+    }
+  }
+  return readOnce(key, fresh, async () => {
+    if (!S.code) return;
+    try {
+      const reply = await apiWrite('mgrBoard', { code: S.code, weekOf });
+      if (wrongCode(reply)) {
+        S.errors.code = reply.error;
+      } else if (reply.ok === false) {
+        S.mgr.boardErr = reply.error;
+      } else {
+        S.mgr.boards[weekOf] = reply;
+        S.mgr.boardErr = '';
+        store.set(key, reply);
+      }
+    } catch (err) {
+      if (!S.mgr.boards[weekOf]) S.mgr.boardErr = OFFLINE_MESSAGE;
+    }
+    render();
+  });
+}
+function loadMgrHours(month, fresh) {
+  if (!S.code) return Promise.resolve();
+  const key = 'mhours.' + month;
+  if (!S.mgr.hours[month]) {
+    const cached = store.get(key);
+    if (cached) {
+      S.mgr.hours[month] = cached;
+      render();
+    }
+  }
+  return readOnce(key, fresh, async () => {
+    if (!S.code) return;
+    try {
+      const reply = await apiWrite('mgrHours', { code: S.code, month });
+      if (wrongCode(reply)) {
+        S.errors.code = reply.error;
+      } else if (reply.ok === false) {
+        S.mgr.hoursErr = reply.error;
+      } else {
+        S.mgr.hours[reply.month] = reply;
+        S.mgr.hoursErr = '';
+        store.set('mhours.' + reply.month, reply);
+      }
+    } catch (err) {
+      if (!S.mgr.hours[S.mgr.month]) S.mgr.hoursErr = OFFLINE_MESSAGE;
+    }
+    render();
+  });
+}
+/* Manage starts on the site's first week until that week has come, since nothing ever runs for an earlier one. */
+function startWeek(view) {
+  return view.week.firstWeek || view.week.thisWeek.weekOf;
+}
+function oneOffFormState() {
+  const view = S.view;
+  const state = form('oneoff');
+  const start = startWeek(view);
+  if (!state.weekOf || state.weekOf < start) {
+    const weekend = view.now.day === 'Sat' || view.now.day === 'Sun';
+    const wanted = (weekend ? view.week.nextWeek : view.week.thisWeek).weekOf;
+    state.weekOf = wanted > start ? wanted : start;
+    resetOneOffFields(state);
+  }
+  return state;
+}
+function resetOneOffFields(state) {
+  state.title = '';
+  state.details = '';
+  state.priority = 'B';
+  state.minutes = 30;
+  state.day = '';
+  state.who = [];
+}
+function loadManage() {
+  const view = S.view;
+  if (!view || !view.me.manager || !S.code) return;
+  if (!S.mgr.weekOf) S.mgr.weekOf = startWeek(view);
+  if (!S.mgr.month) S.mgr.month = view.now.date.slice(0, 7);
+  if (S.mgr.sub === 'week') loadBoard(S.mgr.weekOf);
+  if (S.mgr.sub === 'oneoffs') loadBoard(oneOffFormState().weekOf);
+  if (S.mgr.sub === 'hours') loadMgrHours(S.mgr.month);
+}
+
+/* ========================================================================= views ======= */
+
+function viewLoading() {
+  if (S.syncFailed && !S.boot) {
+    return html`
+      <div class="card empty">
+        <p class="strong">Can't reach the server right now.</p>
+        <button type="button" class="btn btn-line" style="margin-top:14px" data-act="boot-retry">Try again</button>
+      </div>`;
+  }
+  return html`
+    <div aria-label="Loading">
+      <div class="skel skel-line" style="width:45%"></div>
+      <div class="skel skel-line" style="width:30%;margin-bottom:18px"></div>
+      <div class="skel skel-card"></div>
+      <div class="skel skel-card"></div>
+      <div class="skel skel-card"></div>
+    </div>`;
+}
+function viewStaleNote() {
+  if (!S.syncFailed || Date.now() - S.bootAt < 10 * 60 * 1000) return '';
+  return html`<p class="quiet-note">Can't reach the server right now. This might be out of date.</p>`;
+}
+function fieldError(key) {
+  return S.errors[key] ? html`<p class="err form-err" role="alert">${S.errors[key]}</p>` : '';
+}
+function isBusy(key) {
+  return !!S.busy[key];
+}
+
+/* ---- sign in ---- */
+
+function peopleForPicker() {
+  const staff = (S.names || []).filter((person) => person.type !== 'Manager').sort((a, b) => a.name.localeCompare(b.name));
+  const managers = (S.names || []).filter((person) => person.type === 'Manager').sort((a, b) => a.name.localeCompare(b.name));
+  return staff.concat(managers);
+}
+function pickerName(person, everyone) {
+  const first = firstName(person.name);
+  return everyone.filter((other) => firstName(other.name) === first).length > 1 ? person.name : first;
+}
+function viewSignIn() {
+  const people = peopleForPicker();
+  return html`
+    <div class="signin">
+      <div class="signin-brand">${KX}<span>Operations</span></div>
+      <h1 class="title">Who are you?</h1>
+      ${S.signInError ? html`<p class="err" role="alert" style="margin:-8px 0 14px">${S.signInError}</p>` : ''}
+      ${people.length
+        ? html`
+          <ul class="people">
+            ${people.map((person) => html`
+              <li data-key="p:${person.name}">
+                <button type="button" class="person" data-act="pick" data-name="${person.name}">
+                  <span class="avatar">${initial(person.name)}</span>
+                  <span>${pickerName(person, people)}</span>
+                  ${I.chevron}
+                </button>
+              </li>`)}
+          </ul>`
+        : S.namesError
+          ? html`
+            <div class="card empty">
+              <p class="strong">${S.namesError}</p>
+              <button type="button" class="btn btn-line" style="margin-top:14px" data-act="names-retry">Try again</button>
+            </div>`
+          : html`<div class="skel skel-card"></div><div class="skel skel-card"></div><div class="skel skel-card"></div>`}
+    </div>`;
+}
+function viewCodeStep() {
+  const state = form('code');
+  return html`
+    <div class="signin">
+      <div class="signin-brand">${KX}<span>Operations</span></div>
+      <h1 class="title">Hi, ${firstName(S.me)}</h1>
+      <p class="lead">Managers enter a code once on each device.</p>
+      <form data-submit="code" novalidate>
+        <label class="field">
+          <span class="label">Manager code</span>
+          <input class="input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" data-form="code" data-field="value" value="${state.value || ''}">
+        </label>
+        ${fieldError('code')}
+        <button type="submit" class="btn btn-primary form-btn" ${isBusy('code') ? new Safe('disabled') : ''}>${isBusy('code') ? 'Checking...' : 'Continue'}</button>
+      </form>
+      <button type="button" class="link link-center" style="margin-top:8px" data-act="code-skip">Skip for now</button>
+      <button type="button" class="link link-center" data-act="switch">Not you?</button>
+    </div>`;
+}
+
+/* ---- shell ---- */
+
+/* The sign-in list already says who the managers are, so nobody waits on the server to find out. */
+function iAmManager() {
+  if (S.view) return !!S.view.me.manager;
+  return (S.names || []).some((person) => person.name === S.me && person.type === 'Manager');
+}
+function viewShell(content) {
+  const tabs = iAmManager() ? TABS.concat([MANAGE_TAB]) : TABS;
+  const current = (tab) => (tab.id === S.tab ? new Safe('aria-current="page"') : '');
+  return html`
+    <div class="${S.tab === 'manage' ? 'wide' : ''}">
+      <aside class="side">
+        <div class="brand">${KX}<span>Operations</span></div>
+        <nav class="side-nav" aria-label="Main">
+          ${tabs.map((tab) => html`
+            <button type="button" class="side-link" data-act="tab" data-tab="${tab.id}" ${current(tab)}>${tab.icon}<span>${tab.label}</span></button>`)}
+        </nav>
+        <button type="button" class="side-me" data-act="person" aria-label="${S.me}. Not you? Switch person">
+          <span class="avatar avatar-sm">${initial(S.me)}</span>
+          <span>${firstName(S.me)}</span>
+        </button>
+      </aside>
+      <div class="col">
+        <header class="top">
+          <div class="brand">${KX}<span>Operations</span></div>
+          <button type="button" class="top-me" data-act="person" aria-label="${S.me}. Not you? Switch person">
+            <span class="avatar avatar-sm">${initial(S.me)}</span>
+          </button>
+        </header>
+        <main class="main" id="main" tabindex="-1">
+          <div data-key="tab:${S.tab}">${content}</div>
+        </main>
+      </div>
+      <nav class="tabbar tabbar-${tabs.length}" aria-label="Main">
+        ${tabs.map((tab) => html`
+          <button type="button" class="tab" data-act="tab" data-tab="${tab.id}" ${current(tab)}>${tab.icon}<span class="${tab.tiny ? 'swap' : ''}">${tab.label}</span>${tab.tiny ? html`<span class="tiny">${tab.tiny}</span>` : ''}</button>`)}
+      </nav>
+    </div>`;
+}
+
+/* ---- the clock card ---- */
+
+function elapsedText(entry, view) {
+  if (entry.t) return minutesText(Math.max(0, Math.floor((Date.now() - entry.t) / 60000))); // still waiting to send, so the tap's own time
+  const start = labelToMinutes(entry.in);
+  const now = serverMinutes();
+  if (start === null || now === null) return '';
+  const pastMidnight = entry.date < view.now.date ? 1440 : 0;
+  return minutesText(Math.max(0, Math.floor(now + pastMidnight - start)));
+}
+function sinceText(entry, view) {
+  return entry.date < view.now.date ? entry.dayLabel + ', ' + entry.in : entry.in;
+}
+/* Noticing at 5 PM that you finished at noon is the ordinary way to forget, and Clock out would save the wrong hours. */
+function viewAlreadyFinished(entry, small) {
+  if (String(entry.id).startsWith('waiting-')) return ''; // not at the server yet, so there's nothing to fix
+  return html`<button type="button" class="link${small ? '' : ' link-center'}" data-act="fix-hours" data-id="${entry.id}">Already finished? Enter the time</button>`;
+}
+function todayEntry(view) {
+  return view.hours.entries.find((entry) => entry.date === view.now.date && entry.out);
+}
+function viewClockCard(view, options) {
+  const small = options && options.small;
+  const noLink = options && options.noLink;
+  const shift = view.today.shift;
+  const shiftText = shift ? shift.start + ' - ' + shift.end : '';
+  if (view.clock.status === 'in' && view.clock.entry) {
+    const entry = view.clock.entry;
+    const elapsed = elapsedText(entry, view);
+    if (small) {
+      return html`
+        <section class="card clock clock-small" aria-label="Time clock">
+          <div class="clock-row">
+            <div class="clock-row-text">
+              <div class="clock-state"><span class="clock-dot" aria-hidden="true"></span>On the clock</div>
+              <div class="muted small">Since ${sinceText(entry, view)}${elapsed ? ', ' + elapsed : ''}</div>
+            </div>
+            <button type="button" class="btn btn-soft btn-sm" data-act="clock-out">Clock out</button>
+          </div>
+          ${viewAlreadyFinished(entry, true)}
+        </section>`;
+    }
+    return html`
+      <section class="card clock clock-linked" aria-label="Time clock">
+        <div class="clock-state"><span class="clock-dot" aria-hidden="true"></span>On the clock since ${sinceText(entry, view)}</div>
+        ${elapsed ? html`<div class="clock-time">${elapsed}</div>` : ''}
+        <div class="clock-sub">${shiftText ? 'Scheduled ' + shiftText : ''}</div>
+        <button type="button" class="btn btn-soft" data-act="clock-out">Clock out</button>
+        ${viewAlreadyFinished(entry)}
+      </section>`;
+  }
+  const finished = options && options.newDay ? null : todayEntry(view);
+  const finishedText = finished ? 'Clocked out at ' + finished.out + '.' : '';
+  if (small) {
+    return html`
+      <section class="card clock clock-small" aria-label="Time clock">
+        <div class="clock-row">
+          <div class="clock-row-text">
+            <div class="clock-state">${finished ? finishedText : 'Not clocked in'}</div>
+          </div>
+          <button type="button" class="btn ${finished ? 'btn-soft' : 'btn-primary'} btn-sm" data-act="clock-in">${finished ? 'Clock back in' : 'Clock in'}</button>
+        </div>
+        <button type="button" class="link" data-act="add-hours">Forgot to clock in?</button>
+      </section>`;
+  }
+  // Once they've clocked out today, going back on the clock isn't the main thing any more.
+  return html`
+    <section class="card clock${noLink ? '' : ' clock-linked'}" aria-label="Time clock">
+      ${shiftText ? html`<div class="clock-label">Scheduled today</div><div class="clock-shift">${shiftText}</div>` : ''}
+      ${finished ? html`<p class="clock-note">${finishedText}</p>` : ''}
+      <button type="button" class="btn ${finished ? 'btn-soft' : 'btn-primary'}" data-act="clock-in">${finished ? 'Clock back in' : 'Clock in'}</button>
+      ${noLink ? '' : html`<button type="button" class="link link-center" data-act="add-hours">Forgot to clock in?</button>`}
+    </section>`;
+}
+function viewStaleCard(view) {
+  const entry = view.clock.stale[0];
+  if (!entry) return '';
+  const state = form('stale');
+  const key = 'stale:' + entry.id;
+  return html`
+    <section class="card stale" data-key="${key}" aria-label="Missing clock-out">
+      <div class="stale-tag"><i aria-hidden="true"></i>Needs a fix</div>
+      <h2 class="h3">You didn't clock out on ${entry.dayLabel}.</h2>
+      <p class="muted" style="margin-top:2px">You clocked in at ${entry.in}.</p>
+      <form data-submit="stale" data-id="${entry.id}" novalidate>
+        <label class="field">
+          <span class="label">What time did you finish?</span>
+          <input class="input" type="time" data-form="stale" data-field="${entry.id}" value="${state[entry.id] || ''}">
+        </label>
+        ${fieldError(key)}
+        <button type="submit" class="btn btn-primary form-btn" ${isBusy(key) ? new Safe('disabled') : ''}>${isBusy(key) ? 'Saving...' : 'Save'}</button>
+      </form>
+    </section>`;
+}
+
+/* ---- task rows ---- */
+
+function viewTaskRow(task) {
+  const open = S.noteOpen === task.id;
+  const notes = form('note');
+  const draft = notes[task.id] !== undefined ? notes[task.id] : task.note || '';
+  return html`
+    <li class="task${task.done ? ' done' : ''}" data-key="task:${task.id}">
+      <button type="button" class="check" role="checkbox" aria-checked="${task.done ? 'true' : 'false'}" aria-label="${task.title}" data-act="toggle" data-id="${task.id}">
+        <span class="circle">${I.check}</span>
+      </button>
+      <button type="button" class="task-main" aria-expanded="${open ? 'true' : 'false'}" data-act="note-open" data-id="${task.id}">
+        <span class="task-title">${task.title}</span>
+        ${task.details ? html`<span class="task-details">${task.details}</span>` : ''}
+        <span class="task-meta">
+          ${task.top && !task.done ? html`<span class="chip">Top priority</span>` : ''}
+          <span>${task.done && task.doneAt ? 'Done ' + task.doneAt : 'About ' + minutesText(task.minutes)}</span>
+          ${task.rolled ? html`<span>Carried over</span>` : ''}
+          ${task.note || open ? '' : html`<span class="task-note-mark">${I.note}</span>`}
+        </span>
+        ${task.partial && !task.done ? html`<span class="task-details">Part of a bigger job. Leave it unchecked until the whole job is done.</span>` : ''}
+        ${task.note && !open ? html`<span class="task-note">${I.note}<span>${task.note}</span></span>` : ''}
+      </button>
+      ${open
+        ? html`
+          <div class="note-edit">
+            <label>
+              <span class="label">${task.note ? 'Your note' : 'Add a note'}</span>
+              <textarea class="input" maxlength="500" rows="3" placeholder="Rower 4 chain is loose" data-form="note" data-field="${task.id}">${draft}</textarea>
+            </label>
+            <div class="row-btns">
+              <button type="button" class="btn btn-primary btn-sm" data-act="note-save" data-id="${task.id}">Save note</button>
+              <button type="button" class="btn btn-line btn-sm" data-act="note-cancel" data-id="${task.id}">Cancel</button>
+            </div>
+          </div>`
+        : ''}
+    </li>`;
+}
+
+/* ---- today ---- */
+
+function awayToday(view) {
+  const today = view.week.thisWeek.days.find((day) => day.date === view.now.date);
+  return !!(today && today.off);
+}
+function viewNothingToday(view) {
+  const next = view.today.next;
+  const closed = view.today.closed;
+  return html`
+    <div class="card empty sec">
+      <span class="badge">${I.sun}</span>
+      <p class="h3">${closed ? 'The gym is closed today.' : 'Nothing on your list today.'}</p>
+      ${closed ? html`<p class="muted">${closed}</p>` : awayToday(view) ? html`<p class="muted">You're marked out of town.</p>` : ''}
+      ${next
+        ? html`
+          <p class="muted">Next up: ${next.label}${next.start ? ' at ' + next.start : ''}.</p>
+          <p class="muted">${plural(next.count, 'task')}</p>`
+        : html`<p class="muted">Nothing coming up yet.</p>`}
+    </div>`;
+}
+function viewOpenTasks(view) {
+  const tasks = view.today.openTasks;
+  if (!tasks.length || awayToday(view)) return '';
+  const open = S.openTasksOpen;
+  return html`
+    <section class="card sec" id="open-tasks" aria-label="Open tasks">
+      <button type="button" class="open-toggle" aria-expanded="${open ? 'true' : 'false'}" data-act="open-tasks">
+        <span>${plural(tasks.length, 'open task')} today</span>
+        ${I.chevron}
+      </button>
+      ${open
+        ? html`
+          <p class="open-hint">${tasks.length === 1 ? "Nobody has this one yet. Take it if you have time." : "Nobody has these yet. Take one if you have time."}</p>
+          <ul class="open-list">
+            ${tasks.map((task) => html`
+              <li class="open-row" data-key="open:${task.id}">
+                <div class="open-row-text">
+                  <div class="h3">${task.title}</div>
+                  ${task.details ? html`<div class="muted" style="font-size:15px">${task.details}</div>` : ''}
+                  <div class="muted small">About ${minutesText(task.minutes)}</div>
+                </div>
+                <button type="button" class="btn btn-soft btn-sm" data-act="claim" data-id="${task.id}" aria-label="Take it: ${task.title}">Take it</button>
+              </li>`)}
+          </ul>`
+        : ''}
+    </section>`;
+}
+function viewToday() {
+  const view = S.view;
+  if (!view || staleDay()) return viewLoading();
+  if (dayIsOver()) {
+    // Midnight has passed and the server can't be reached. Yesterday's list isn't today's, so it stays off the screen.
+    return html`
+      <p class="quiet-note">Can't reach the server right now. Today's list will show up once it's back.</p>
+      <div class="hello"><h1 class="title">Hi, ${firstName(view.me.name)}</h1></div>
+      ${viewClockCard(view, { small: true, newDay: true })}`;
+  }
+  const tasks = view.today.tasks;
+  const done = tasks.filter((task) => task.done).length;
+  const percent = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+  const allDone = tasks.length > 0 && done === tasks.length;
+  const finished = todayEntry(view);
+  return html`
+    ${viewStaleNote()}
+    <div class="hello">
+      <p class="hello-date">${view.now.label}</p>
+      <h1 class="title">Hi, ${firstName(view.me.name)}</h1>
+    </div>
+    ${viewStaleCard(view)}
+    ${viewClockCard(view, { small: !tasks.length })}
+    ${tasks.length
+      ? html`
+        <section class="sec" aria-label="Today's tasks">
+          <div class="sec-head">
+            <h2 class="h2">Today's tasks</h2>
+            <span class="count">${done} of ${tasks.length} done</span>
+          </div>
+          <div class="prog" role="progressbar" aria-label="Tasks done" aria-valuemin="0" aria-valuemax="${tasks.length}" aria-valuenow="${done}"><i style="width:${percent}%"></i></div>
+          <ul class="tasks">${tasks.map(viewTaskRow)}</ul>
+          ${allDone
+            ? html`
+              <div class="card alldone" id="all-done">
+                <span class="badge">${I.badgeCheck}</span>
+                <p class="h2">All done for today</p>
+                ${view.clock.status === 'in'
+                  ? html`<button type="button" class="btn btn-primary" data-act="clock-out">Clock out</button>`
+                  : finished
+                    ? html`<p class="muted" style="margin-top:2px">Clocked out at ${finished.out}.</p>`
+                    : html`<button type="button" class="link link-center" data-act="add-hours">Forgot to clock in?</button>`}
+              </div>`
+            : ''}
+        </section>`
+      : viewNothingToday(view)}
+    ${viewOpenTasks(view)}`;
+}
+
+/* ---- schedule ---- */
+
+function viewDay(day, view) {
+  const isToday = day.date === view.now.date;
+  const parts = day.label.split(', ');
+  if (!day.tasks.length) {
+    let right = html`<span>Off</span>`;
+    if (day.closed) right = html`<span class="chip chip-quiet chip-wrap">Closed: ${day.closed}</span>`;
+    else if (day.off) right = html`<span class="chip">Out of town</span>`;
+    return html`<li class="day-off" data-key="day:${day.date}"><span>${day.label}${isToday ? ' (today)' : ''}</span>${right}</li>`;
+  }
+  const open = S.schedOpen[day.date] !== undefined ? S.schedOpen[day.date] : isToday;
+  const done = day.tasks.filter((task) => task.done).length;
+  const sub = [];
+  if (day.shift) sub.push(day.shift.start + ' - ' + day.shift.end);
+  sub.push(!done ? plural(day.tasks.length, 'task') : done === day.tasks.length ? 'All ' + done + ' done' : done + ' of ' + day.tasks.length + ' done');
+  return html`
+    <li class="card day" data-key="day:${day.date}">
+      <button type="button" class="day-head" aria-expanded="${open ? 'true' : 'false'}" data-act="day-toggle" data-date="${day.date}">
+        <span class="day-tile"><span>${MONTHS[Number(day.date.slice(5, 7)) - 1]}</span><b>${Number(day.date.slice(8))}</b></span>
+        <span class="day-info">
+          <span class="day-name">${DAY_LONG[parts[0]] || day.label}${isToday ? html`<span class="chip">Today</span>` : ''}${day.off ? html`<span class="chip">Out of town</span>` : ''}</span>
+          <span class="day-sub">${sub.map((part) => html`<span>${part}</span>`)}</span>
+        </span>
+        ${I.chevron}
+      </button>
+      ${open ? html`<ul class="tasks">${day.tasks.map(viewTaskRow)}</ul>` : ''}
+    </li>`;
+}
+function viewSchedule() {
+  const view = S.view;
+  if (!view) return viewLoading();
+  const which = S.schedWeek;
+  const week = view.week[which];
+  const anyWork = week.days.some((day) => day.tasks.length);
+  let body;
+  if (!week.published) {
+    body = html`
+      <div class="card empty" style="margin-top:16px">
+        <span class="badge">${I.schedule}</span>
+        <p class="h3">${which === 'nextWeek' ? "Next week's schedule comes out Friday at 7 AM." : "This week's schedule isn't out yet."}</p>
+      </div>`;
+  } else {
+    body = html`
+      ${anyWork ? '' : html`<p class="muted" style="margin-top:14px">You're not on the schedule ${which === 'nextWeek' ? 'next week' : 'this week'}.</p>`}
+      <ul class="days">${week.days.map((day) => viewDay(day, view))}</ul>`;
+  }
+  return html`
+    ${viewStaleNote()}
+    <h1 class="title" style="margin-bottom:14px">Schedule</h1>
+    <div class="seg" role="group" aria-label="Which week">
+      <button type="button" aria-pressed="${which === 'thisWeek' ? 'true' : 'false'}" data-act="sched-week" data-week="thisWeek">This week</button>
+      <button type="button" aria-pressed="${which === 'nextWeek' ? 'true' : 'false'}" data-act="sched-week" data-week="nextWeek">Next week</button>
+    </div>
+    <p class="muted" style="margin-top:12px">${week.label}</p>
+    ${body}`;
+}
+
+/* ---- availability ---- */
+
+function chipStatus(week) {
+  if (week.status === 'submitted') return html`<span>${I.check}Filled in</span>`;
+  if (week.status === 'none') return html`<span>Can't work</span>`;
+  if (week.past) return html`<span class="is-danger">Past due</span>`;
+  return html`<span>Not yet</span>`;
+}
+function availWeeks(view) {
+  const weeks = view.availability.weeks.slice();
+  const wanted = S.avail.week;
+  if (wanted && !weeks.some((week) => week.weekOf === wanted)) {
+    const data = S.avail.data[wanted];
+    weeks.unshift({
+      weekOf: wanted,
+      label: monthDay(wanted) + ' - ' + (wanted.slice(0, 7) === addDays(wanted, 6).slice(0, 7) ? addDays(wanted, 6).slice(8).replace(/^0/, '') : monthDay(addDays(wanted, 6))),
+      deadline: data ? data.deadline : '',
+      past: data ? data.past : true,
+      status: data && data.submittedAt ? (data.none ? 'none' : 'submitted') : 'missing',
+      late: data ? data.late : false,
+      hoursWanted: data ? data.hoursWanted : null,
+    });
+  }
+  return weeks;
+}
+function selectedHours(current, data) {
+  let count = 0;
+  data.days.forEach((day) => {
+    if (dayBlocked(day)) return;
+    count += (current.slots[day.key] || []).length;
+  });
+  return count;
+}
+function dayBlocked(day) {
+  return !!(day.closed || day.off);
+}
+function viewGrid(current, data) {
+  const days = data.days;
+  const has = (key, hour) => (current.slots[key] || []).indexOf(hour) >= 0;
+  return html`
+    <table class="grid" aria-label="Hours you can work">
+      <thead>
+        <tr>
+          <th scope="col"><span class="sr">Hour</span></th>
+          ${days.map((day) => html`
+            <th scope="col" class="${dayBlocked(day) ? 'off' : ''}">
+              <button type="button" class="g-day" data-act="slot-day" data-day="${day.key}" aria-label="${DAY_LONG[day.key]} ${day.label}. Tap for the whole day." ${dayBlocked(day) ? new Safe('disabled') : ''}>
+                <b>${day.key}</b><span>${day.label}</span>
+              </button>
+            </th>`)}
+        </tr>
+      </thead>
+      <tbody>
+        ${data.hours.map((hour) => html`
+          <tr>
+            <th scope="row">
+              <button type="button" class="g-hour" data-act="slot-hour" data-hour="${hour}" aria-label="${hourLabel(hour)}. Tap for every day.">${hourLabel(hour)}</button>
+            </th>
+            ${days.map((day) => {
+              const blocked = dayBlocked(day);
+              const on = !blocked && has(day.key, hour);
+              return html`
+                <td class="${blocked ? 'off' : ''}">
+                  <button type="button" class="g-cell" aria-pressed="${on ? 'true' : 'false'}" aria-label="${DAY_LONG[day.key]} ${hourLabel(hour)}" data-act="slot" data-day="${day.key}" data-hour="${hour}" ${blocked ? new Safe('disabled') : ''}></button>
+                </td>`;
+            })}
+          </tr>`)}
+      </tbody>
+    </table>`;
+}
+function viewAvailForm(view, week, data, current) {
+  const count = selectedHours(current, data);
+  const wanted = current.hoursWanted;
+  const blocked = data.days.filter(dayBlocked);
+  return html`
+    <p>
+      <span class="strong">Week of ${week.label.split(' - ')[0]}.</span>
+      ${data.past ? ' ' : html` <span class="due">Due ${deadlineLong(data.deadline)}.</span>`}
+    </p>
+    ${data.past ? html`<p class="muted" style="margin-top:4px">The deadline has passed. You can still ${data.submittedAt ? 'change this' : 'fill this out'} and pick up any tasks that are left.</p>` : ''}
+    ${data.submittedAt ? html`<p class="status-line">Saved ${data.submittedAt}${data.late ? ', after the deadline' : ''}.</p>` : ''}
+
+    <div class="btn-pair">
+      <button type="button" class="btn btn-line" data-act="avail-copy" ${data.last ? '' : new Safe('disabled')}>Copy last week</button>
+      <button type="button" class="btn btn-line" data-act="avail-none">Can't work this week</button>
+    </div>
+    ${current.message ? html`<p class="status-line" role="status">${current.message}</p>` : ''}
+
+    <div class="card stepper-card" id="hours-wanted">
+      <div class="h3">Hours I want this week</div>
+      <div class="stepper" role="group" aria-label="Hours I want this week">
+        <button type="button" class="step" data-act="hours-step" data-delta="-0.5" aria-label="Half an hour less" ${!wanted ? new Safe('disabled') : ''}>${I.minus}</button>
+        <div class="step-val">
+          <input class="step-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Hours I want this week" data-avail-hours value="${current.hoursText !== undefined ? current.hoursText : wanted === null || wanted === undefined ? '' : hoursNumber(wanted)}">
+          <span class="step-unit">${hoursWord(wanted)}</span>
+        </div>
+        <button type="button" class="step" data-act="hours-step" data-delta="0.5" aria-label="Half an hour more">${I.plus}</button>
+      </div>
+      ${current.hoursError ? html`<p class="err form-err" role="alert">${current.hoursError}</p>` : ''}
+    </div>
+
+    <section class="sec" aria-label="When you can work">
+      <div class="h2">When can you work?</div>
+      <p class="muted" style="margin-top:2px;font-size:15px">Tap the hours. Tap a day or a time to fill the whole line.</p>
+      <div class="grid-wrap">
+        ${viewGrid(current, data)}
+        <div class="grid-foot">
+          <div class="grid-count" role="status">${plural(count, 'hour')} selected</div>
+          ${count ? html`<button type="button" class="link" data-act="avail-clear">Clear all</button>` : ''}
+        </div>
+      </div>
+      ${wanted && wanted > count ? html`<p class="grid-note">You want ${hoursNumber(wanted)} ${hoursWord(wanted)} but only picked ${count}.</p>` : ''}
+      ${blocked.length
+        ? html`<p class="off-note">${blocked.map((day, index) => html`${index ? ' ' : ''}${DAY_LONG[day.key]} is ${day.closed ? 'closed: ' + day.closed : 'marked out of town'}.`)}</p>`
+        : ''}
+    </section>
+
+    <label class="field" style="margin-top:20px">
+      <span class="label">Anything else we should know?</span>
+      <textarea class="input" rows="3" maxlength="500" data-avail-notes placeholder="Leaving early Thursday">${current.notes || ''}</textarea>
+    </label>
+    ${current.error ? html`<p class="err form-err" role="alert">${current.error}</p>` : ''}
+    ${current.dirty ? html`<p class="status-line" style="text-align:center">Not saved yet.</p>` : ''}
+    <button type="button" class="btn btn-primary form-btn" style="${current.dirty ? 'margin-top:8px' : ''}" data-act="avail-save" ${isBusy('avail') ? new Safe('disabled') : ''}>${isBusy('avail') ? 'Saving...' : data.submittedAt && !data.none ? 'Save changes' : 'Save availability'}</button>`;
+}
+function viewAvailNone(week) {
+  return html`
+    <div class="card empty">
+      <p class="h3">You said you can't work ${week.label}.</p>
+      <p class="muted">We won't schedule you that week.</p>
+      <button type="button" class="btn btn-line" style="margin-top:16px" data-act="avail-reopen">Fill it out instead</button>
+    </div>`;
+}
+function viewAvailSuccess(success) {
+  const dates = html`<span class="nowrap">${success.label}</span>`;
+  let line;
+  if (success.none) line = html`<p class="lead">We won't schedule you for ${dates}.</p>`;
+  else if (success.picked && success.picked.length) line = html`<p class="lead">You picked up ${plural(success.picked.length, 'task')} for ${dates}. They're on your schedule.</p>`;
+  else if (success.late) line = html`<p class="lead">It's past the deadline, so you'll only get tasks that are left.</p>`;
+  else if (success.past) line = html`<p class="lead">We saved your changes.</p>`;
+  else line = html`<p class="lead">Your schedule comes out Friday at 7 AM.</p>`;
+  return html`
+    <div class="card done-card">
+      <span class="badge">${I.badgeCheck}</span>
+      <h2 class="title">You're all set!</h2>
+      ${line}
+      <button type="button" class="btn btn-primary" data-act="avail-another">Fill out another week</button>
+    </div>`;
+}
+function viewOutOfTown(view, primary) {
+  const state = form('off');
+  const today = view.now.date;
+  return html`
+    <section class="card off-card" aria-label="Out of town">
+      <h2 class="h2">Out of town?</h2>
+      <p class="muted" style="font-size:15px;margin-bottom:14px">We'll cover your tasks on those days.</p>
+      <form data-submit="off" novalidate>
+        <div class="two">
+          <label class="field">
+            <span class="label">From</span>
+            <input class="input" type="date" min="${today}" data-form="off" data-field="from" value="${state.from || ''}">
+          </label>
+          <label class="field">
+            <span class="label">To</span>
+            <input class="input" type="date" min="${state.from || today}" data-form="off" data-field="to" value="${state.to || ''}">
+          </label>
+        </div>
+        <label class="field">
+          <span class="label">Note <span class="opt">(optional)</span></span>
+          <input class="input" type="text" maxlength="500" placeholder="Visiting family" data-form="off" data-field="note" value="${state.note || ''}">
+        </label>
+        ${fieldError('off')}
+        ${S.errors.offOk ? html`<p class="form-ok" role="status">${S.errors.offOk}</p>` : ''}
+        <button type="submit" class="btn ${primary ? 'btn-primary' : 'btn-line'} form-btn" ${isBusy('off') ? new Safe('disabled') : ''}>${isBusy('off') ? 'Saving...' : 'Save dates'}</button>
+      </form>
+      ${view.timeOff.length
+        ? html`
+          <ul class="off-list" aria-label="Upcoming out of town dates">
+            ${view.timeOff.map((off) => html`
+              <li class="off-row" data-key="off:${off.id}">
+                <div>
+                  <div class="strong">${off.label}</div>
+                  ${off.note ? html`<div class="muted" style="font-size:15px">${off.note}</div>` : ''}
+                </div>
+                <button type="button" class="btn btn-line btn-sm" data-act="off-remove" data-id="${off.id}" aria-label="Remove ${off.label}">Remove</button>
+              </li>`)}
+          </ul>`
+        : ''}
+    </section>`;
+}
+function viewAvailability() {
+  const view = S.view;
+  if (!view) return viewLoading();
+  if (view.me.type !== 'Flexible') {
+    const days = view.me.setDays || [];
+    const line = view.me.type === 'Set'
+      ? (days.length ? "You're automatically on the schedule every " + days.join(', ') + '. Nothing to fill out.' : "You're automatically on the schedule. Nothing to fill out.")
+      : "Managers aren't on the automatic schedule. Nothing to fill out.";
+    return html`
+      ${viewStaleNote()}
+      <h1 class="title" style="margin-bottom:8px">Availability</h1>
+      <p class="lead" style="color:var(--text)">${line}</p>
+      <div style="margin-top:-8px">${viewOutOfTown(view, true)}</div>`;
+  }
+  const weeks = availWeeks(view);
+  const success = S.avail.success;
+  const weekOf = S.avail.week || availFirstWeek(view);
+  const week = weeks.find((one) => one.weekOf === weekOf) || weeks[0];
+  const data = S.avail.data[week.weekOf];
+  const current = availForm(week.weekOf);
+  let body;
+  if (success) {
+    body = viewAvailSuccess(success);
+  } else if (!data || !current) {
+    body = S.avail.error
+      ? html`
+        <div class="card empty">
+          <p class="strong">${S.avail.error}</p>
+          <button type="button" class="btn btn-line" style="margin-top:14px" data-act="avail-retry">Try again</button>
+        </div>`
+      : html`<div class="skel skel-card"></div><div class="skel skel-card" style="height:420px"></div>`;
+  } else if (data.none && !current.editing) {
+    body = viewAvailNone(week);
+  } else {
+    body = viewAvailForm(view, week, data, current);
+  }
+  return html`
+    ${viewStaleNote()}
+    <h1 class="title">Availability</h1>
+    ${success ? html`<div style="height:14px"></div>` : html`
+      <div class="wk-scroll" role="group" aria-label="Pick a week">
+        ${weeks.map((one) => html`
+          <button type="button" class="wk-chip" data-key="wk:${one.weekOf}" aria-pressed="${one.weekOf === week.weekOf ? 'true' : 'false'}" data-act="avail-week" data-week="${one.weekOf}">
+            <b>${one.label}</b>
+            ${chipStatus(one)}
+          </button>`)}
+      </div>`}
+    <div data-key="avail:${week.weekOf}:${success ? 'done' : 'form'}">${body}</div>
+    ${viewOutOfTown(view, false)}`;
+}
+
+/* ---- hours ---- */
+
+function entryLabel(entry) {
+  if (entry.flag === 'fixed') return html`<span class="chip chip-quiet">Fixed</span>`;
+  if (entry.flag === 'manual') return html`<span class="chip chip-quiet">Added by you</span>`;
+  if (entry.flag === 'edited') return html`<span class="chip chip-quiet">Edited by a manager</span>`;
+  return '';
+}
+function viewEntry(entry, view) {
+  const running = !!view.clock.entry && view.clock.entry.id === entry.id;
+  const isOpenToday = !entry.out && (entry.date === view.now.date || running);
+  const missing = !entry.out && !isOpenToday;
+  return html`
+    <li class="entry" data-key="entry:${entry.id}">
+      <div class="entry-text">
+        <div class="entry-day">${entry.dayLabel}${entryLabel(entry)}</div>
+        <div class="entry-time ${missing ? 'danger' : ''}">
+          ${isOpenToday ? entry.in + ' - on the clock now' : missing ? entry.in + ' - no clock-out' : entry.in + ' - ' + entry.out}
+        </div>
+        ${entry.note ? html`<div class="entry-note">${entry.note}</div>` : ''}
+      </div>
+      ${missing
+        ? html`<button type="button" class="btn btn-soft btn-sm" data-act="fix-hours" data-id="${entry.id}" aria-label="Fix ${entry.dayLabel}">Fix</button>`
+        : html`<div class="entry-hours">${entry.hours === null || entry.hours === undefined ? '' : hrs(entry.hours)}</div>`}
+    </li>`;
+}
+function viewHours() {
+  const view = S.view;
+  if (!view) return viewLoading();
+  const hours = view.hours;
+  const thisMonth = view.now.date.slice(0, 7);
+  const thisEntries = hours.entries.filter((entry) => entry.date.slice(0, 7) === thisMonth);
+  const lastEntries = hours.entries.filter((entry) => entry.date.slice(0, 7) !== thisMonth);
+  return html`
+    ${viewStaleNote()}
+    <h1 class="title" style="margin-bottom:14px">Hours</h1>
+    ${viewStaleCard(view)}
+    ${viewClockCard(view, { noLink: true })}
+    <div class="total">
+      <div class="total-big">
+        <span class="total-num">${hoursNumber(hours.monthTotal)}</span>
+        <span class="total-word">${hoursWord(hours.monthTotal)} in ${hours.monthLabel}</span>
+      </div>
+      <p class="total-last">${hours.lastMonthLabel}: ${hoursNumber(hours.lastMonthTotal)} ${hoursWord(hours.lastMonthTotal)}</p>
+    </div>
+    <button type="button" class="link" style="margin-top:6px" data-act="add-hours">Forgot to clock in? Add hours.</button>
+    ${thisEntries.length || lastEntries.length ? '' : html`<p class="muted" style="margin-top:12px">No hours logged yet.</p>`}
+    ${thisEntries.length
+      ? html`
+        <h2 class="month-head">${hours.monthLabel}</h2>
+        <ul class="card">${thisEntries.map((entry) => viewEntry(entry, view))}</ul>`
+      : ''}
+    ${lastEntries.length
+      ? html`
+        <h2 class="month-head">${hours.lastMonthLabel}</h2>
+        <ul class="card">${lastEntries.map((entry) => viewEntry(entry, view))}</ul>`
+      : ''}`;
+}
+
+/* ---- manage ---- */
+
+function viewManage() {
+  const view = S.view;
+  if (!view) return viewLoading();
+  const sub = S.mgr.sub;
+  if (!S.code) {
+    const state = form('code');
+    return html`
+      <h1 class="title" style="margin-bottom:6px">Manage</h1>
+      <p class="lead" style="margin-bottom:16px">Enter the manager code to open this. You only do it once on this device.</p>
+      <form data-submit="code" novalidate style="max-width:420px">
+        <label class="field">
+          <span class="label">Manager code</span>
+          <input class="input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" data-form="code" data-field="value" value="${state.value || ''}">
+        </label>
+        ${fieldError('code')}
+        <button type="submit" class="btn btn-primary form-btn" ${isBusy('code') ? new Safe('disabled') : ''}>${isBusy('code') ? 'Checking...' : 'Continue'}</button>
+      </form>`;
+  }
+  const seg = (id, label) => html`<button type="button" aria-pressed="${sub === id ? 'true' : 'false'}" data-act="mgr-sub" data-sub="${id}">${label}</button>`;
+  let body;
+  if (sub === 'oneoffs') body = viewMgrOneOffs(view);
+  else if (sub === 'hours') body = viewMgrHours(view);
+  else body = viewMgrWeek(view);
+  return html`
+    <div class="mg-head">
+      <h1 class="title">Manage</h1>
+      <div class="seg mg-seg" role="group" aria-label="Manage section">
+        ${seg('week', 'Week')}${seg('oneoffs', 'One-offs')}${seg('hours', 'Hours')}
+      </div>
+    </div>
+    <div data-key="mgr:${sub}">${body}</div>`;
+}
+
+const UNCOVERED_SHOWN = 5;
+function assignableDays(board, view) {
+  return board.days.filter((day) => day.date >= view.now.date && !day.closed);
+}
+function options(items, selected) {
+  return items.map((item) => html`<option value="${item.value}" ${item.value === selected ? new Safe('selected') : ''}>${item.label}</option>`);
+}
+function viewUncovered(board, view) {
+  const rows = [];
+  board.days.forEach((day) => {
+    day.uncovered.forEach((task) => {
+      if (task.status === 'open') rows.push(Object.assign({ dayLabel: day.label }, task));
+    });
+  });
+  if (!rows.length) return '';
+  const days = assignableDays(board, view);
+  const people = board.staffNames.map((name) => ({ value: name, label: firstNameOrFull(name, board.staffNames) }));
+  // A week nobody filled in can leave dozens of these, and the days and people still need to be findable under them.
+  const shown = S.mgr.uncAll ? rows : rows.slice(0, UNCOVERED_SHOWN);
+  return html`
+    <section class="card unc" aria-label="Uncovered tasks">
+      <div class="unc-head">
+        <h2 class="h2 danger">Uncovered</h2>
+        <span class="chip chip-danger">${rows.length}</span>
+      </div>
+      ${shown.map((task) => {
+        const key = 'assign:' + task.id;
+        const state = form(key);
+        const dayValue = state.date || (days.some((day) => day.date === task.date) ? task.date : days[0] ? days[0].date : '');
+        return html`
+          <div class="unc-row" data-key="${key}">
+            <div class="unc-title">${task.title}</div>
+            <div class="muted small">${task.dayLabel} · About ${minutesText(task.minutes)}${task.top ? ' · Top priority' : ''}</div>
+            ${days.length
+              ? html`
+                <div class="unc-pick">
+                  <select class="input" aria-label="Who" data-form="${key}" data-field="name">
+                    ${options([{ value: '', label: 'Who?' }].concat(people), state.name || '')}
+                  </select>
+                  <select class="input" aria-label="Which day" data-form="${key}" data-field="date">
+                    ${options(days.map((day) => ({ value: day.date, label: day.label })), dayValue)}
+                  </select>
+                  <button type="button" class="btn ${rows.length > 1 ? 'btn-soft' : 'btn-primary'} btn-sm" data-act="assign" data-id="${task.id}" ${isBusy(key) ? new Safe('disabled') : ''}>${isBusy(key) ? 'Saving...' : 'Assign'}</button>
+                </div>
+                ${fieldError(key)}`
+              : ''}
+          </div>`;
+      })}
+      ${rows.length > UNCOVERED_SHOWN
+        ? html`<button type="button" class="btn btn-line unc-more" data-act="unc-all">${S.mgr.uncAll ? 'Show fewer' : 'Show ' + (rows.length - shown.length) + ' more'}</button>`
+        : ''}
+    </section>`;
+}
+function firstNameOrFull(name, everyone) {
+  const first = firstName(name);
+  return everyone.filter((other) => firstName(other) === first).length > 1 ? name : first;
+}
+function viewMgrTask(task, day, board, view) {
+  const status = task.done ? 'done' : task.status === 'missed' ? 'missed' : 'open';
+  const canMove = !task.done && assignableDays(board, view).length > 0;
+  return html`
+    <li class="mtask${task.done ? ' done' : ''}" data-key="mt:${task.id}">
+      <span class="mstat${status === 'done' ? ' is-done' : status === 'missed' ? ' is-missed' : ''}" role="img" aria-label="${status === 'done' ? 'Done' : status === 'missed' ? 'Missed' : 'Not done yet'}">${I.check}</span>
+      <div class="mtask-text">
+        <div class="mtask-title">${task.title}</div>
+        <div class="mtask-meta">
+          ${task.done && task.doneAt ? html`<span>Done ${task.doneAt}${task.doneBy ? ' by ' + firstNameOrFull(task.doneBy, board.staffNames) : ''}</span>` : html`<span>About ${minutesText(task.minutes)}</span>`}
+          ${status === 'missed' ? html`<span class="danger">Missed</span>` : ''}
+          ${task.top && !task.done ? html`<span>Top priority</span>` : ''}
+          ${task.source === 'cover' ? html`<span>Covering</span>` : ''}
+          ${task.source === 'manual' ? html`<span>Placed by hand</span>` : ''}
+          ${task.source === 'late' ? html`<span>Late pickup</span>` : ''}
+          ${task.rolled ? html`<span>Carried over</span>` : ''}
+        </div>
+        ${task.note ? html`<div class="mtask-note">${I.note}<span>${task.note}</span></div>` : ''}
+      </div>
+      ${canMove ? html`<button type="button" class="btn btn-line" data-act="move" data-id="${task.id}" data-date="${day.date}" aria-label="Move ${task.title}">Move</button>` : ''}
+    </li>`;
+}
+function viewMgrDay(day, board, view) {
+  const isToday = day.date === view.now.date;
+  const missed = day.uncovered.filter((task) => task.status !== 'open');
+  return html`
+    <section class="card" data-key="d:${day.date}" aria-label="${day.label}">
+      <div class="mday-head">
+        <h3 class="h3">${day.label}</h3>
+        ${isToday ? html`<span class="chip">Today</span>` : ''}
+        ${day.closed ? html`<span class="chip chip-quiet chip-wrap">Closed: ${day.closed}</span>` : ''}
+      </div>
+      ${day.groups.length || missed.length || day.closed ? '' : html`<p class="empty-line">Nobody on.</p>`}
+      ${day.groups.map((group) => {
+        const key = day.date + '|' + group.name;
+        const open = S.mgr.open[key] !== undefined ? S.mgr.open[key] : isToday;
+        const done = group.tasks.filter((task) => task.done).length;
+        return html`
+          <div class="mgroup" data-key="g:${key}">
+            <button type="button" class="mgroup-head" aria-expanded="${open ? 'true' : 'false'}" data-act="mgr-group" data-key2="${key}">
+              <span class="avatar avatar-sm">${initial(group.name)}</span>
+              <span class="mg-who">
+                <span class="mg-name">${firstNameOrFull(group.name, board.staffNames)}</span>
+                ${group.shift ? html`<span class="mg-shift"><span class="nowrap">${group.shift.start}</span> - <span class="nowrap">${group.shift.end}</span></span>` : ''}
+              </span>
+              <span class="mg-count">${done} of ${group.tasks.length}<span class="word"> done</span></span>
+              ${I.chevron}
+            </button>
+            ${open ? html`<ul class="mtasks">${group.tasks.map((task) => viewMgrTask(task, day, board, view))}</ul>` : ''}
+          </div>`;
+      })}
+      ${missed.length ? html`<p class="empty-line" style="padding-top:10px;border-top:1px solid var(--line)">Missed, nobody on it: ${missed.map((task) => task.title).join(', ')}</p>` : ''}
+    </section>`;
+}
+function availText(person, duePassed) {
+  if (person.avail === 'set') return html`<span class="chip chip-quiet">Set days</span>`;
+  if (person.avail === 'none') return html`<span class="chip chip-quiet">Can't work</span>`;
+  if (person.avail === 'missing') return html`<span class="chip ${duePassed ? 'chip-danger' : 'chip-quiet'}">Not in yet</span>`;
+  if (person.late) return html`<span class="chip">In late</span>`;
+  return html`<span class="chip">Filled in</span>`;
+}
+function viewPeople(board, view, unbuilt) {
+  const line = view.availability.weeks.find((week) => week.weekOf === board.weekOf);
+  const duePassed = line ? line.past : true; // the list only has weeks still to come
+  return html`
+    <section class="card people-card" aria-label="People">
+      <h2 class="h2">People</h2>
+      ${board.people.map((person) => {
+        const assigned = Math.round((person.assignedMin / 60) * 10) / 10;
+        const wants = person.wanted === null || person.wanted === undefined ? '' : 'Wants ' + hrs(person.wanted);
+        const hoursLine = unbuilt ? wants : wants ? wants + ', has ' + hoursNumber(assigned) : hrs(assigned) + ' assigned';
+        const doneLine = person.taskCount ? person.doneCount + ' of ' + plural(person.taskCount, 'task') + ' done' : 'No tasks';
+        return html`
+          <div class="person-line" data-key="pl:${person.name}">
+            <span class="rank" aria-label="Rank ${person.rank === null ? 'none' : person.rank}">${person.rank === null ? initial(person.name) : person.rank}</span>
+            <div class="person-body">
+              <div class="person-top">
+                <span class="person-name">${firstNameOrFull(person.name, board.staffNames)}</span>
+                ${availText(person, duePassed)}
+              </div>
+              ${hoursLine ? html`<div class="person-meta">${hoursLine}</div>` : ''}
+              ${unbuilt ? '' : html`<div class="person-meta">${doneLine}, ${hrs(person.loggedHours)} logged</div>`}
+              ${person.off.length ? html`<div class="person-meta">Out of town: ${person.off.join(', ')}</div>` : ''}
+              ${person.notes ? html`<div class="person-note">${person.notes}</div>` : ''}
+            </div>
+          </div>`;
+      })}
+    </section>`;
+}
+function viewMgrWeek(view) {
+  const weekOf = S.mgr.weekOf || startWeek(view);
+  const board = S.mgr.boards[weekOf];
+  if (!board) {
+    return S.mgr.boardErr
+      ? html`<div class="card empty"><p class="strong">${S.mgr.boardErr}</p><button type="button" class="btn btn-line" style="margin-top:14px" data-act="mgr-retry">Try again</button></div>`
+      : viewLoading();
+  }
+  const index = board.weeks.findIndex((week) => week.weekOf === board.weekOf);
+  const prev = index > 0 ? board.weeks[index - 1] : null;
+  const next = index >= 0 && index < board.weeks.length - 1 ? board.weeks[index + 1] : null;
+  const over = board.days[6].date < view.now.date;
+  const canRebuild = !over && (board.published || addDays(board.weekOf, -3) <= view.now.date);
+  const nextWeek = board.nextWeek;
+  const nextLine = view.availability.weeks.find((week) => week.weekOf === nextWeek.weekOf);
+  const deadlineCard = html`
+    <section class="card side-card" aria-label="Availability deadline">
+      <h2 class="h3">${nextLine && nextLine.past ? 'Deadline was ' : 'Next deadline: '}${nextWeek.deadline}</h2>
+      ${nextLine ? html`<p class="muted" style="font-size:15px">For the week of ${nextLine.label}.</p>` : ''}
+      ${nextWeek.missing.length
+        ? html`
+          <p class="muted" style="font-size:15px">Not in yet: ${nameList(nextWeek.missing)}</p>
+          <button type="button" class="btn btn-line" data-act="mgr-remind" data-week="${nextWeek.weekOf}" ${isBusy('remind') ? new Safe('disabled') : ''}>${isBusy('remind') ? 'Sending...' : 'Send reminder now'}</button>`
+        : html`<p class="muted" style="font-size:15px">Everyone's in.</p>`}
+    </section>`;
+  const rerunCard = canRebuild
+    ? html`
+      <section class="card side-card" aria-label="Re-run matching">
+        <h2 class="h3">Re-run matching</h2>
+        <p class="muted" style="font-size:15px">Matches later days again. Anything done or placed by hand stays put.</p>
+        <button type="button" class="btn btn-line" data-act="mgr-rebuild" data-week="${board.weekOf}">Re-run matching</button>
+      </section>`
+    : '';
+  // Before it's built there's nothing to show day by day. What matters is who's in.
+  const unbuilt = !board.published && !board.days.some((day) => day.groups.length || day.uncovered.length);
+  return html`
+    <div class="wk-switch">
+      <button type="button" class="wk-arrow back" data-act="mgr-week" data-week="${prev ? prev.weekOf : ''}" aria-label="Earlier week" ${prev ? '' : new Safe('disabled')}>${I.chevron}</button>
+      <h2 class="h2">${board.label}</h2>
+      <button type="button" class="wk-arrow" data-act="mgr-week" data-week="${next ? next.weekOf : ''}" aria-label="Later week" ${next ? '' : new Safe('disabled')}>${I.chevron}</button>
+    </div>
+    <p class="built">${board.published ? 'Went out ' + board.builtAt : 'Not out yet. It goes out Friday at 7 AM.'}</p>
+    <p class="on-clock${board.onClock.length ? '' : ' is-none'}">
+      <b>On the clock now:</b>
+      ${board.onClock.length ? board.onClock.map((one, i) => (i ? ', ' : ' ') + firstNameOrFull(one.name, board.staffNames) + ' since ' + one.since).join('') : ' Nobody'}
+    </p>
+    ${unbuilt
+      ? html`
+        <div class="mg-solo">
+          ${deadlineCard}
+          ${viewPeople(board, view, true)}
+          ${rerunCard}
+        </div>`
+      : html`
+        <div class="mg-cols">
+          <div class="mg-col">
+            ${viewUncovered(board, view)}
+            ${board.days.map((day) => viewMgrDay(day, board, view))}
+          </div>
+          <div class="mg-col">
+            ${viewPeople(board, view)}
+            ${deadlineCard}
+            ${rerunCard}
+          </div>
+        </div>`}`;
+}
+
+/* one-offs */
+
+const PRIORITIES = ['A', 'B', 'C'];
+const DURATIONS = [{ value: 15, label: '15 min' }, { value: 30, label: '30 min' }, { value: 60, label: '1 hr' }, { value: 120, label: '2 hrs' }, { value: 240, label: 'Half day' }];
+
+function viewOneOffFields(formName, state, view, staffNames) {
+  const weeks = [{ id: 'thisWeek', label: 'This week' }, { id: 'nextWeek', label: 'Next week' }].filter((week) => view.week[week.id].weekOf >= startWeek(view));
+  const chosenWeek = weeks.find((week) => view.week[week.id].weekOf === state.weekOf);
+  const days = chosenWeek ? view.week[chosenWeek.id].days : [];
+  const durations = DURATIONS.some((one) => one.value === Number(state.minutes))
+    ? DURATIONS
+    : DURATIONS.concat([{ value: Number(state.minutes), label: minutesText(state.minutes) }]);
+  const who = state.who || [];
+  const pick = (field, value, label, on, extra) => html`
+    <button type="button" class="pick ${extra || ''}" aria-pressed="${on ? 'true' : 'false'}" data-act="oo-pick" data-form-name="${formName}" data-field="${field}" data-value="${value}">${label}</button>`;
+  return html`
+    <label class="field">
+      <span class="label">What needs done?</span>
+      <input class="input" type="text" maxlength="120" enterkeyhint="go" id="${formName}-title" data-form="${formName}" data-field="title" value="${state.title || ''}" placeholder="Clean the bike fans">
+    </label>
+    ${fieldError(formName + 'Title')}
+    ${formName === 'oneoff' && S.mgr.added ? html`<p class="form-ok" role="status">${S.mgr.added}</p>` : ''}
+    <label class="field">
+      <span class="label">Details <span class="opt">(optional)</span></span>
+      ${formName === 'oneoffEdit'
+        ? html`<textarea class="input" rows="3" maxlength="500" data-form="${formName}" data-field="details">${state.details || ''}</textarea>`
+        : html`<input class="input" type="text" maxlength="500" enterkeyhint="go" data-form="${formName}" data-field="details" value="${state.details || ''}">`}
+    </label>
+    <div class="group" role="group" aria-label="Priority">
+      <div class="label">Priority</div>
+      <div class="picks">${PRIORITIES.map((priority) => pick('priority', priority, priority, String(state.priority).charAt(0) === priority, 'pick-big'))}</div>
+    </div>
+    <div class="group" role="group" aria-label="About how long">
+      <div class="label">About how long?</div>
+      <div class="picks">${durations.map((one) => pick('minutes', one.value, one.label, Number(state.minutes) === one.value))}</div>
+    </div>
+    <div class="group" role="group" aria-label="Which week">
+      <div class="label">Which week?</div>
+      ${weeks.length ? '' : html`<p class="muted">Week of ${monthDay(state.weekOf)}</p>`}
+      <div class="picks">${weeks.map((week) => pick('weekOf', view.week[week.id].weekOf, html`${week.label}<small>${view.week[week.id].label}</small>`, state.weekOf === view.week[week.id].weekOf, 'pick-week'))}</div>
+    </div>
+    <div class="group" role="group" aria-label="Which day">
+      <div class="label">Which day?</div>
+      <div class="picks">
+        ${pick('day', '', 'Any day', !state.day)}
+        ${days.map((day) => {
+          const key = day.label.slice(0, 3);
+          const gone = day.date < view.now.date || !!day.closed;
+          return html`<button type="button" class="pick" aria-pressed="${state.day === key ? 'true' : 'false'}" data-act="oo-pick" data-form-name="${formName}" data-field="day" data-value="${key}" ${gone ? new Safe('disabled') : ''}>${key}</button>`;
+        })}
+      </div>
+    </div>
+    <div class="group" role="group" aria-label="Who">
+      <div class="label">Who?</div>
+      <div class="picks">
+        ${pick('who', '', 'Anyone', !who.length)}
+        ${staffNames.map((name) => pick('who', name, firstNameOrFull(name, staffNames), who.indexOf(name) >= 0))}
+      </div>
+    </div>`;
+}
+function oneOffStatus(item, board) {
+  const parts = [];
+  if (item.status === 'done') {
+    parts.push('Done' + (item.doneBy ? ' by ' + firstName(item.doneBy) : '') + (item.doneAt ? ', ' + item.doneAt : ''));
+  } else if (item.assignedTo) {
+    parts.push(firstName(item.assignedTo) + ', ' + item.assignedLabel);
+  } else if (!board || !board.published) {
+    parts.push('Goes out Friday at 7 AM' + (item.day ? ', for ' + DAY_LONG[item.day] : ''));
+  }
+  return parts.join('');
+}
+function viewOneOffRow(item, board) {
+  const uncovered = item.status === 'open' && !item.assignedTo && board && board.published;
+  return html`
+    <li class="oo-row${item.status === 'done' ? ' is-done' : ''}" data-key="oo:${item.id}">
+      <div class="oo-title">${item.title}</div>
+      ${item.details ? html`<div class="oo-details">${item.details}</div>` : ''}
+      <div class="oo-status">
+        ${item.status === 'done' ? '' : html`<span class="chip">Priority ${item.priority}</span>`}
+        <span>
+          ${uncovered ? html`<span class="danger">Uncovered${item.assignedLabel ? ', ' + item.assignedLabel : ''}</span>` : oneOffStatus(item, board)}
+          ${item.status !== 'done' && item.who.length ? html` · Only ${item.who.map(firstName).join(', ')}` : ''}
+          ${item.status !== 'done' ? html` · About ${minutesText(item.minutes)}` : ''}
+          ${item.status !== 'done' && item.assignedMinutes && item.assignedMinutes < item.minutes ? html` · ${minutesText(item.assignedMinutes)} on the schedule` : ''}
+        </span>
+      </div>
+      <div class="oo-btns">
+        ${item.status === 'open' ? html`<button type="button" class="btn btn-line btn-sm" data-act="oo-edit" data-id="${item.id}" aria-label="Edit ${item.title}">Edit</button>` : ''}
+        <button type="button" class="btn btn-line btn-sm" data-act="oo-delete" data-id="${item.id}" aria-label="Delete ${item.title}">Delete</button>
+      </div>
+    </li>`;
+}
+function viewMgrOneOffs(view) {
+  const state = oneOffFormState();
+  const board = S.mgr.boards[state.weekOf];
+  const staff = board ? board.staffNames : (S.names || []).map((person) => person.name);
+  const list = board ? board.oneOffs.slice().reverse() : [];
+  const outbox = S.mgr.outbox.filter((item) => item.req.weekOf === state.weekOf);
+  const label = state.weekOf === view.week.thisWeek.weekOf ? 'This week' : 'Next week';
+  return html`
+    <div class="mgr-two">
+      <section class="card oo-form" aria-label="Add a one-off">
+        <h2 class="h2">Add a one-off</h2>
+        <form data-submit="oneoff" novalidate>
+          ${viewOneOffFields('oneoff', state, view, staff)}
+          <div class="dock"><button type="submit" class="btn btn-primary">Add task</button></div>
+        </form>
+      </section>
+      <section aria-label="One-offs for this week">
+        <div class="oo-list-head">
+          <h2 class="h2">${label}</h2>
+          <span class="count">${board ? board.label : ''}</span>
+        </div>
+        ${outbox.length || list.length
+          ? html`
+            <ul class="card">
+              ${outbox.map((item) => html`
+                <li class="oo-row" data-key="oo-out:${item.tempId}">
+                  <div class="oo-title">${item.req.title}</div>
+                  ${item.error
+                    ? html`
+                      <p class="err" role="alert" style="margin-top:4px">${item.error}</p>
+                      <div class="oo-btns">
+                        <button type="button" class="btn btn-line btn-sm" data-act="oo-retry" data-id="${item.tempId}">Try again</button>
+                        <button type="button" class="btn btn-line btn-sm" data-act="oo-discard" data-id="${item.tempId}">Remove</button>
+                      </div>`
+                    : html`<div class="oo-status">Saving...</div>`}
+                </li>`)}
+              ${list.map((item) => viewOneOffRow(item, board))}
+            </ul>`
+          : board
+            ? html`<div class="card empty"><p class="muted">No one-offs yet for this week.</p></div>`
+            : S.mgr.boardErr
+              ? html`<div class="card empty"><p class="strong">${S.mgr.boardErr}</p><button type="button" class="btn btn-line" style="margin-top:14px" data-act="mgr-retry">Try again</button></div>`
+              : html`<div class="skel skel-card"></div>`}
+      </section>
+    </div>`;
+}
+
+/* hours */
+
+function viewMgrHours() {
+  const report = S.mgr.hours[S.mgr.month];
+  if (!report) {
+    return S.mgr.hoursErr
+      ? html`<div class="card empty"><p class="strong">${S.mgr.hoursErr}</p><button type="button" class="btn btn-line" style="margin-top:14px" data-act="mgr-retry">Try again</button></div>`
+      : viewLoading();
+  }
+  const longOnes = (person) => person.entries.filter((entry) => entry.long).length;
+  const totalLong = report.people.reduce((sum, person) => sum + longOnes(person), 0);
+  return html`
+    <div>
+      <div class="tools">
+        <select class="input" aria-label="Month" data-act-change="mgr-month">
+          ${options(report.months.map((month) => ({ value: month.month, label: month.label })), report.month)}
+        </select>
+        <button type="button" class="btn btn-primary btn-sm" data-act="copy-payroll">Copy for payroll</button>
+      </div>
+      ${report.totalIssues ? html`<p class="issues" role="status">${plural(report.totalIssues, 'entry', 'entries')} still ${report.totalIssues === 1 ? 'needs' : 'need'} a fix.</p>` : ''}
+      ${totalLong ? html`<p class="quiet-note" role="status">${plural(totalLong, 'entry', 'entries')} ran much longer than scheduled. Worth a look before payroll.</p>` : ''}
+      <div class="card">
+        ${report.people.map((person) => {
+          const open = !!S.mgr.open['hours|' + person.name];
+          return html`
+            <div class="hp" data-key="hp:${person.name}">
+              <button type="button" class="hp-head" aria-expanded="${open ? 'true' : 'false'}" data-act="mgr-group" data-key2="hours|${person.name}">
+                <span class="avatar avatar-sm">${initial(person.name)}</span>
+                <span class="hp-who">
+                  <span class="hp-name">${firstNameOrFull(person.name, report.people.map((one) => one.name))}${person.issues ? html`<span class="chip chip-danger">${person.issues} to fix</span>` : ''}${longOnes(person) ? html`<span class="chip">${longOnes(person)} long</span>` : ''}</span>
+                  <span class="hp-sub">${plural(person.shifts, 'shift')}</span>
+                </span>
+                <span class="hp-total${Number(person.total) ? '' : ' is-zero'}">${hoursNumber(person.total)} <small>${Number(person.total) === 1 ? 'hr' : 'hrs'}</small></span>
+                ${I.chevron}
+              </button>
+              ${open
+                ? html`
+                  <div class="hp-entries">
+                    ${person.entries.map((entry) => html`
+                      <div class="hp-entry" data-key="he:${entry.id}">
+                        <div class="entry-text">
+                          <div class="entry-day">${entry.dayLabel}${managerFlag(entry)}${entry.overlaps ? html`<span class="chip chip-danger">Overlaps</span>` : ''}${entry.long ? html`<span class="chip">Long</span>` : ''}</div>
+                          <div class="entry-time ${!entry.out && entry.flag === 'missing' ? 'danger' : ''}"><span class="nowrap">${entry.in}</span> - <span class="nowrap">${entry.out || 'no clock-out'}${entry.hours === null ? '' : ', ' + hrs(entry.hours)}</span></div>
+                          ${entry.note ? html`<div class="entry-note">${entry.note}</div>` : ''}
+                        </div>
+                        <button type="button" class="btn btn-line" data-act="entry-edit" data-name="${person.name}" data-id="${entry.id}" aria-label="Edit ${entry.dayLabel}">Edit</button>
+                      </div>`)}
+                    <button type="button" class="btn btn-soft btn-sm hp-add" data-act="entry-add" data-name="${person.name}">Add an entry</button>
+                  </div>`
+                : ''}
+            </div>`;
+        })}
+      </div>
+    </div>`;
+}
+function managerFlag(entry) {
+  if (entry.flag === 'missing') return html`<span class="chip chip-danger">Missing</span>`;
+  if (entry.flag === 'fixed') return html`<span class="chip chip-quiet">Fixed</span>`;
+  if (entry.flag === 'manual') return html`<span class="chip chip-quiet">Added by them</span>`;
+  if (entry.flag === 'edited') return html`<span class="chip chip-quiet">Edited</span>`;
+  return '';
+}
+
+/* ---- sheets ---- */
+
+function sheetFrame(title, body) {
+  return html`
+    <div class="sheet-wrap" data-act="sheet-dismiss">
+      <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">
+        <div class="sheet-head">
+          <h2 class="h2" id="sheet-title">${title}</h2>
+          <button type="button" class="icon-btn" data-act="sheet-close" aria-label="Close">${I.close}</button>
+        </div>
+        ${body}
+      </div>
+    </div>`;
+}
+const SHEETS = {
+  person() {
+    const manager = S.view && S.view.me.manager;
+    return sheetFrame(firstName(S.me), html`
+      <div class="sheet-person">
+        <span class="avatar">${initial(S.me)}</span>
+        <p class="muted">Signed in on this device as ${S.me}.</p>
+      </div>
+      <button type="button" class="btn btn-line" data-act="switch">Not you? Switch person</button>
+      ${manager && S.code ? html`<button type="button" class="link link-center" style="margin-top:8px" data-act="forget-code">Forget the manager code on this device</button>` : ''}`);
+  },
+  addHours() {
+    const view = S.view;
+    const state = form('addHours');
+    return sheetFrame('Add hours', html`
+      <form data-submit="addHours" novalidate>
+        <label class="field">
+          <span class="label">Day</span>
+          <input class="input" type="date" max="${view.now.date}" min="${addDays(view.now.date, -45)}" data-form="addHours" data-field="date" value="${state.date || view.now.date}">
+        </label>
+        <div class="two" style="margin-top:16px">
+          <label class="field">
+            <span class="label">Started</span>
+            <input class="input" type="time" data-form="addHours" data-field="start" value="${state.start || ''}">
+          </label>
+          <label class="field">
+            <span class="label">Finished</span>
+            <input class="input" type="time" data-form="addHours" data-field="end" value="${state.end || ''}">
+          </label>
+        </div>
+        <label class="field">
+          <span class="label">Note <span class="opt">(optional)</span></span>
+          <input class="input" type="text" maxlength="500" data-form="addHours" data-field="note" value="${state.note || ''}">
+        </label>
+        ${fieldError('addHours')}
+        <button type="submit" class="btn btn-primary form-btn" ${isBusy('addHours') ? new Safe('disabled') : ''}>${isBusy('addHours') ? 'Saving...' : 'Save hours'}</button>
+      </form>`);
+  },
+  fixHours(data) {
+    const state = form('fix');
+    return sheetFrame('Fix ' + data.dayLabel, html`
+      <p class="muted">You clocked in at ${data.in}.</p>
+      <form data-submit="fix" data-id="${data.id}" novalidate>
+        <label class="field" style="margin-top:14px">
+          <span class="label">What time did you finish?</span>
+          <input class="input" type="time" data-form="fix" data-field="${data.id}" value="${state[data.id] || ''}">
+        </label>
+        ${fieldError('fix')}
+        <button type="submit" class="btn btn-primary form-btn" ${isBusy('fix') ? new Safe('disabled') : ''}>${isBusy('fix') ? 'Saving...' : 'Save'}</button>
+      </form>`);
+  },
+  confirm(data) {
+    return sheetFrame(data.title, html`
+      ${data.body ? html`<p class="muted" style="margin-bottom:16px">${data.body}</p>` : ''}
+      ${fieldError('confirm')}
+      <button type="button" class="btn btn-primary" style="margin-top:4px" data-act="confirm-yes" ${isBusy('confirm') ? new Safe('disabled') : ''}>${isBusy('confirm') ? 'Working...' : data.yes}</button>
+      <button type="button" class="btn btn-line" data-act="sheet-close">${data.no || 'Never mind'}</button>`);
+  },
+  move(data) {
+    const board = S.mgr.boards[S.mgr.weekOf];
+    const view = S.view;
+    const days = board ? assignableDays(board, view) : [];
+    const state = form('move');
+    const people = board ? board.staffNames : [];
+    return sheetFrame('Move task', html`
+      <p class="strong" style="margin-bottom:14px">${data.title}</p>
+      <form data-submit="move" data-id="${data.id}" novalidate>
+        <label class="field">
+          <span class="label">Who</span>
+          <select class="input" data-form="move" data-field="name">
+            ${options([{ value: '', label: 'Pick a person' }].concat(people.map((name) => ({ value: name, label: firstNameOrFull(name, people) }))), state.name || '')}
+          </select>
+        </label>
+        <label class="field">
+          <span class="label">Which day</span>
+          <select class="input" data-form="move" data-field="date">
+            ${options(days.map((day) => ({ value: day.date, label: day.label })), state.date || '')}
+          </select>
+        </label>
+        ${fieldError('move')}
+        <button type="submit" class="btn btn-primary form-btn" ${isBusy('move') ? new Safe('disabled') : ''}>${isBusy('move') ? 'Saving...' : 'Move'}</button>
+      </form>`);
+  },
+  editOneOff(data) {
+    const view = S.view;
+    const state = form('oneoffEdit');
+    const board = S.mgr.boards[data.weekOf] || S.mgr.boards[oneOffFormState().weekOf];
+    const staff = board ? board.staffNames : (S.names || []).map((person) => person.name);
+    return sheetFrame('Edit one-off', html`
+      <form data-submit="oneoffEdit" data-id="${data.id}" novalidate>
+        ${viewOneOffFields('oneoffEdit', state, view, staff)}
+        <div class="dock">
+          ${fieldError('oneoffEdit')}
+          <button type="submit" class="btn btn-primary" ${isBusy('oneoffEdit') ? new Safe('disabled') : ''}>${isBusy('oneoffEdit') ? 'Saving...' : 'Save'}</button>
+        </div>
+      </form>`);
+  },
+  entry(data) {
+    const state = form('entry');
+    const editing = !!data.id;
+    return sheetFrame(editing ? 'Edit entry: ' + firstName(data.name) : 'Add an entry: ' + firstName(data.name), html`
+      <form data-submit="entry" novalidate>
+        <label class="field">
+          <span class="label">Day</span>
+          <input class="input" type="date" data-form="entry" data-field="date" value="${state.date || ''}">
+        </label>
+        <div class="two" style="margin-top:16px">
+          <label class="field">
+            <span class="label">Started</span>
+            <input class="input" type="time" data-form="entry" data-field="start" value="${state.start || ''}">
+          </label>
+          <label class="field">
+            <span class="label">Finished</span>
+            <input class="input" type="time" data-form="entry" data-field="end" value="${state.end || ''}">
+          </label>
+        </div>
+        ${editing ? html`<p class="muted small" style="margin-top:6px">Leave Finished blank to put them back on the clock.</p>` : ''}
+        <label class="field">
+          <span class="label">Note <span class="opt">(optional)</span></span>
+          <input class="input" type="text" maxlength="500" data-form="entry" data-field="note" value="${state.note || ''}">
+        </label>
+        ${fieldError('entry')}
+        <button type="submit" class="btn btn-primary form-btn" ${isBusy('entry') ? new Safe('disabled') : ''}>${isBusy('entry') ? 'Saving...' : 'Save'}</button>
+        ${editing ? html`<button type="button" class="btn btn-line" style="margin-top:8px" data-act="entry-delete" ${isBusy('entry') ? new Safe('disabled') : ''}>Delete entry</button>` : ''}
+      </form>`);
+  },
+};
+
+/* ==================================================================== rendering ======== */
+
+function render() {
+  const app = $('#app');
+  let content;
+  if (!S.me) {
+    content = viewSignIn();
+  } else if (iAmManager() && !S.code && !S.codeSkipped) {
+    content = viewCodeStep();
+  } else {
+    let body;
+    if (S.tab === 'schedule') body = viewSchedule();
+    else if (S.tab === 'availability') body = viewAvailability();
+    else if (S.tab === 'hours') body = viewHours();
+    else if (S.tab === 'manage') body = viewManage();
+    else body = viewToday();
+    content = viewShell(body);
+  }
+  mount(app, content);
+  revealWeekChip();
+  renderSheet();
+  renderFloat();
+}
+function revealWeekChip() {
+  const chip = $('.wk-chip[aria-pressed="true"]');
+  if (!chip || S.avail.revealed === chip.dataset.week) return;
+  S.avail.revealed = chip.dataset.week;
+  const row = chip.parentElement;
+  const rowBox = row.getBoundingClientRect();
+  const box = chip.getBoundingClientRect();
+  if (box.left < rowBox.left || box.right > rowBox.right) row.scrollLeft += box.left - rowBox.left - parseFloat(getComputedStyle(row).paddingLeft);
+}
+function renderSheet() {
+  const root = $('#sheet');
+  mount(root, S.sheet ? SHEETS[S.sheet.type](S.sheet.data || {}) : '');
+  document.body.classList.toggle('locked', !!S.sheet);
+  const app = $('#app');
+  if (S.sheet) app.setAttribute('inert', '');
+  else app.removeAttribute('inert');
+}
+function renderFloat() {
+  const status = S.me ? saveStatus() : '';
+  mount($('#float'), html`
+    ${S.nudge
+      ? html`
+        <div class="nudge" data-key="nudge">
+          <span class="nudge-text">You're not clocked in</span>
+          <button type="button" class="btn btn-primary" data-act="clock-in">Clock in</button>
+          <button type="button" class="icon-btn" data-act="nudge-close" aria-label="Dismiss">${I.close}</button>
+        </div>`
+      : ''}
+    ${status ? html`<div class="pill" data-key="save">${status}</div>` : ''}
+    ${S.toast ? html`<div class="toast" data-key="toast">${S.toast}</div>` : ''}`);
+}
+
+let toastTimer = null;
+function showToast(message, ms) {
+  S.toast = message;
+  renderFloat();
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    S.toast = '';
+    renderFloat();
+  }, ms || 4500);
+}
+let sheetOpener = null;
+function openSheet(type, data) {
+  sheetOpener = document.activeElement;
+  if (!S.sheet) history.pushState({ sheet: true }, ''); // so the phone's back button closes the sheet, not the site
+  S.sheet = { type, data };
+  render();
+  const sheet = $('#sheet .sheet');
+  if (sheet) sheet.focus({ preventScroll: true });
+}
+function dropSheetHistory() {
+  if (history.state && history.state.sheet) history.back();
+}
+function closeSheet() {
+  dropSheetHistory();
+  S.sheet = null;
+  S.errors.addHours = S.errors.fix = S.errors.move = S.errors.entry = S.errors.oneoffEdit = S.errors.confirm = '';
+  render();
+  if (sheetOpener && document.contains(sheetOpener)) sheetOpener.focus({ preventScroll: true });
+  sheetOpener = null;
+}
+function goToTab(tab) {
+  if (S.tab !== tab) {
+    S.tab = tab;
+    S.tabChosen = true;
+    S.noteOpen = null;
+    S.nudge = false;
+    S.avail.success = null;
+    S.errors.offOk = '';
+    place.set('tab', tab);
+    window.scrollTo(0, 0);
+  }
+  loadTab();
+  refreshIfDue(60000);
+  render();
+}
+
+/* ======================================================================= actions ======= */
+
+function signIn(name, week) {
+  S.me = name;
+  S.signInError = '';
+  S.syncFailed = false;
+  S.codeSkipped = false;
+  store.set('me', name);
+  S.boot = null;
+  S.view = null;
+  S.avail = { week: week || null, chosen: !!week, data: {}, forms: {}, success: null, loading: {}, error: '' };
+  S.tabLoadedFor = null;
+  S.forms = {};
+  S.errors = {};
+  S.nudge = false;
+  S.noteOpen = null;
+  S.schedOpen = {};
+  S.mgr.weekOf = null;
+  S.mgr.month = null;
+  const cached = store.get('boot.' + name);
+  if (cached && cached.data) {
+    S.boot = cached.data;
+    S.bootAt = cached.at;
+    refreshView();
+    if (!S.tabChosen) {
+      S.tab = S.view.me.manager ? 'manage' : 'today';
+      S.tabChosen = true;
+    }
+  }
+  loadBoot();
+  Q.nudgeNow();
+  render();
+}
+function signOut(message) {
+  dropSheetHistory();
+  S.me = null;
+  store.del('me');
+  S.boot = null;
+  S.view = null;
+  S.sheet = null;
+  S.signInError = message || '';
+  S.tab = 'today';
+  S.tabChosen = false;
+  S.nudge = false;
+  place.set('tab', '');
+  place.set('week', '');
+  render();
+  loadNames();
+}
+
+const lastTap = {};
+function tooSoon(key, ms) {
+  const now = Date.now();
+  if (lastTap[key] && now - lastTap[key] < ms) return true;
+  lastTap[key] = now;
+  return false;
+}
+function clockIn() {
+  if (tooSoon('clock', 800)) return;
+  S.nudge = false;
+  const date = S.boot ? tapDate(S.boot, Date.now()) : '';
+  const today = S.boot ? S.boot.week.thisWeek.days.concat(S.boot.week.nextWeek.days).find((day) => day.date === date) : null;
+  Q.add('clockIn', { name: S.me, at: Date.now() }, { label: nowLabel(), dayLabel: today ? today.label : '' });
+}
+function clockOut() {
+  if (tooSoon('clock', 800)) return;
+  Q.add('clockOut', { name: S.me, at: Date.now() }, { label: nowLabel() });
+}
+function maybeNudge(task) {
+  const view = S.view;
+  if (!view || view.me.manager || view.clock.status === 'in') return;
+  if (task.date !== view.now.date) return;
+  if (todayEntry(view)) return;
+  const key = 'nudge.' + S.me;
+  if (store.get(key) === view.now.date) return;
+  store.set(key, view.now.date);
+  S.nudge = true;
+  setTimeout(() => {
+    S.nudge = false;
+    renderFloat();
+  }, 15000);
+}
+function toggleTask(id) {
+  if (tooSoon('task:' + id, 250)) return;
+  let target = null;
+  eachTask(S.view, id, (task) => { target = target || task; });
+  if (!target) return;
+  const done = !target.done;
+  if (done) maybeNudge(target);
+  Q.add('taskToggle', { name: S.me, id, done }, { label: nowLabel() });
+  const view = S.view;
+  const tasks = view.today.tasks;
+  if (done && S.tab === 'today' && tasks.length && tasks.every((task) => task.done)) {
+    const card = $('#all-done');
+    if (card) card.scrollIntoView({ block: 'nearest', behavior: SCROLL });
+  }
+}
+function changeSlots(change) {
+  const weekOf = S.avail.week;
+  const current = availForm(weekOf);
+  const data = S.avail.data[weekOf];
+  if (!current || !data) return;
+  change(current, data);
+  current.message = '';
+  current.error = '';
+  saveDraft(weekOf);
+  render();
+}
+function setSlot(slots, key, hour, on) {
+  const list = slots[key] || [];
+  const at = list.indexOf(hour);
+  if (on && at < 0) list.push(hour);
+  if (!on && at >= 0) list.splice(at, 1);
+  list.sort((a, b) => a - b);
+  if (list.length) slots[key] = list;
+  else delete slots[key];
+}
+function stepHours(delta) {
+  const weekOf = S.avail.week;
+  const current = availForm(weekOf);
+  if (!current) return;
+  const value = Math.min(40, Math.max(0, (Number(current.hoursWanted) || 0) + delta));
+  current.hoursWanted = value;
+  delete current.hoursText;
+  current.error = '';
+  current.hoursError = '';
+  saveDraft(weekOf);
+  render();
+}
+function markWeekSaved(weekOf, none, hoursWanted, late) {
+  if (!S.boot) return;
+  const line = S.boot.availability.weeks.find((week) => week.weekOf === weekOf);
+  if (line) {
+    line.status = none ? 'none' : 'submitted';
+    line.hoursWanted = hoursWanted;
+    line.late = late;
+  }
+  refreshView();
+}
+async function postAvailability(weekOf, none) {
+  const current = availForm(weekOf);
+  const data = S.avail.data[weekOf];
+  const slots = {};
+  if (!none) {
+    data.days.forEach((day) => {
+      if (!dayBlocked(day) && current.slots[day.key] && current.slots[day.key].length) slots[day.key] = current.slots[day.key];
+    });
+  }
+  const reply = await apiWrite('saveAvailability', { name: S.me, weekOf, slots, hoursWanted: none ? 0 : current.hoursWanted, notes: current.notes || '', none: !!none });
+  if (reply.ok === false) return reply;
+  store.del(draftKey(weekOf));
+  current.dirty = false;
+  current.editing = false;
+  current.message = '';
+  delete S.avail.data[weekOf];
+  delete S.avail.forms[weekOf];
+  store.del('avail.' + S.me + '.' + weekOf);
+  const week = availWeeks(S.view).find((one) => one.weekOf === weekOf);
+  markWeekSaved(weekOf, none, none ? 0 : current.hoursWanted, reply.late);
+  S.avail.success = { weekOf, label: week ? week.label : '', none: !!none, late: reply.late, past: !!data.past, picked: reply.picked || [] };
+  return reply;
+}
+async function saveAvailability() {
+  const weekOf = S.avail.week;
+  const current = availForm(weekOf);
+  const data = S.avail.data[weekOf];
+  if (!current || !data || isBusy('avail')) return;
+  commitHoursText(current);
+  if (!(Number(current.hoursWanted) > 0)) {
+    current.error = '';
+    current.hoursError = 'Please tell us how many hours you want this week.';
+    render();
+    const box = $('#hours-wanted');
+    if (box) box.scrollIntoView({ block: 'center', behavior: SCROLL });
+    return;
+  }
+  if (!selectedHours(current, data)) {
+    current.error = "Please pick at least one hour, or tap Can't work this week.";
+    render();
+    return;
+  }
+  S.busy.avail = true;
+  current.error = '';
+  render();
+  try {
+    const reply = await postAvailability(weekOf, false);
+    if (reply.ok === false) current.error = reply.error;
+    else window.scrollTo(0, 0);
+  } catch (err) {
+    current.error = OFFLINE_MESSAGE;
+  }
+  S.busy.avail = false;
+  render();
+  syncSoon(400);
+}
+function commitHoursText(current) {
+  if (current.hoursText === undefined) return;
+  const value = Number(String(current.hoursText).replace(',', '.'));
+  if (current.hoursText === '' || !isFinite(value)) current.hoursWanted = current.hoursText === '' ? null : current.hoursWanted;
+  else current.hoursWanted = Math.min(40, Math.max(0, Math.round(value * 2) / 2));
+  delete current.hoursText;
+}
+
+/* The confirm sheet runs one of these on yes. */
+const CONFIRMED = {
+  async availNone(data) {
+    const reply = await postAvailability(data.weekOf, true);
+    if (reply.ok === false) return reply;
+    window.scrollTo(0, 0);
+    syncSoon(400);
+    return reply;
+  },
+  async rebuild(data) {
+    const reply = await apiWrite('mgrRebuild', { code: S.code, weekOf: data.weekOf, by: S.me });
+    if (reply.ok === false) return reply;
+    showToast(reply.unfilled ? 'Done. ' + plural(reply.unfilled, 'task') + ' still uncovered.' : 'Done. Everything is covered.');
+    loadBoard(S.mgr.weekOf, true);
+    return reply;
+  },
+  async oneOffDelete(data) {
+    const reply = await apiWrite('mgrOneOffDelete', { code: S.code, id: data.id, by: S.me });
+    if (reply.ok === false) return reply;
+    showToast('Deleted.');
+    Object.keys(S.mgr.boards).forEach((week) => {
+      S.mgr.boards[week].oneOffs = S.mgr.boards[week].oneOffs.filter((item) => item.id !== data.id);
+    });
+    loadBoard(oneOffFormState().weekOf, true);
+    return reply;
+  },
+  async entryDelete(data) {
+    const reply = await apiWrite('mgrHoursDelete', { code: S.code, id: data.id, by: S.me });
+    if (reply.ok === false) return reply;
+    showToast('Entry deleted.');
+    loadMgrHours(S.mgr.month, true);
+    return reply;
+  },
+};
+
+/* One-offs send in order in the background, so the next one can be typed right away. */
+let outboxBusy = false;
+async function pumpOutbox() {
+  if (outboxBusy) return;
+  outboxBusy = true;
+  try {
+    for (;;) {
+      const item = S.mgr.outbox.find((one) => !one.error);
+      if (!item) break;
+      let reply;
+      // The answer goes right under the title box: on a phone the keyboard is up by now, and it would hide a toast.
+      try {
+        reply = await apiWrite('mgrOneOffAdd', Object.assign({ code: S.code, by: S.me }, item.req));
+      } catch (err) {
+        item.error = OFFLINE_MESSAGE;
+        S.mgr.added = '';
+        S.errors.oneoffTitle = "Couldn't add " + item.req.title + '. Try again from the list below.';
+        render();
+        continue;
+      }
+      if (reply.ok === false) {
+        item.error = reply.error;
+        S.mgr.added = '';
+        S.errors.oneoffTitle = "Couldn't add " + item.req.title + '. Try again from the list below.';
+        if (wrongCode(reply)) S.errors.code = reply.error;
+        render();
+        continue;
+      }
+      S.mgr.outbox = S.mgr.outbox.filter((one) => one !== item);
+      const board = S.mgr.boards[item.req.weekOf];
+      if (board && !board.oneOffs.some((one) => one.id === reply.id)) board.oneOffs.push(reply.oneOff);
+      if (reply.placed === null) S.mgr.added = 'Added. It goes out Friday at 7 AM.';
+      else if (reply.placed.name) S.mgr.added = 'Added. ' + firstName(reply.placed.name) + ' has it on ' + reply.oneOff.assignedLabel + '.';
+      else S.mgr.added = 'Added. Nobody fits it yet, so it shows as uncovered.';
+      render();
+    }
+  } finally {
+    outboxBusy = false;
+  }
+  const weekOf = S.view && oneOffFormState().weekOf;
+  if (weekOf) loadBoard(weekOf, true);
+}
+
+const A = {
+  /* sign in */
+  pick(el) { signIn(el.dataset.name); },
+  'names-retry'() {
+    S.namesError = '';
+    render();
+    loadNames();
+  },
+  'boot-retry'() {
+    S.syncFailed = false;
+    render();
+    loadBoot();
+  },
+  'code-skip'() {
+    S.codeSkipped = true;
+    S.tab = 'today';
+    S.tabChosen = true;
+    render();
+  },
+  switch() {
+    S.sheet = null;
+    signOut('');
+  },
+  person() { openSheet('person'); },
+  'forget-code'() {
+    forgetCode();
+    S.codeSkipped = true;
+    closeSheet();
+    if (S.tab === 'manage') goToTab('today');
+    showToast('The manager code is gone from this device.');
+  },
+
+  /* tabs */
+  tab(el) { goToTab(el.dataset.tab); },
+
+  /* today */
+  'clock-in'() { clockIn(); },
+  'clock-out'() { clockOut(); },
+  'nudge-close'() {
+    S.nudge = false;
+    renderFloat();
+  },
+  toggle(el) { toggleTask(el.dataset.id); },
+  'note-open'(el) {
+    const id = el.dataset.id;
+    S.noteOpen = S.noteOpen === id ? null : id;
+    render();
+    if (S.noteOpen === id) {
+      const box = document.querySelector('[data-form="note"][data-field="' + CSS.escape(id) + '"]');
+      if (box) {
+        // Missing the check circle on a phone shouldn't throw a keyboard over the list. They tap the box when they mean it.
+        if (HAS_MOUSE) box.focus({ preventScroll: true });
+        box.closest('.note-edit').scrollIntoView({ block: 'nearest', behavior: SCROLL });
+      }
+    }
+  },
+  'note-save'(el) {
+    const id = el.dataset.id;
+    const notes = form('note');
+    let before = '';
+    eachTask(S.view, id, (task) => { before = task.note || ''; });
+    const text = (notes[id] !== undefined ? notes[id] : before).trim();
+    S.noteOpen = null;
+    delete notes[id];
+    if (text === before) render();
+    else Q.add('taskNote', { name: S.me, id, note: text });
+  },
+  'note-cancel'(el) {
+    delete form('note')[el.dataset.id];
+    S.noteOpen = null;
+    render();
+  },
+  'open-tasks'() {
+    S.openTasksOpen = !S.openTasksOpen;
+    render();
+    // It sits at the very bottom, so what it just opened would otherwise land under the tab bar.
+    if (S.openTasksOpen) {
+      const card = $('#open-tasks');
+      if (card) card.scrollIntoView({ block: 'nearest', behavior: SCROLL });
+    }
+  },
+  claim(el) {
+    if (tooSoon('claim:' + el.dataset.id, 800)) return;
+    Q.add('taskClaim', { name: S.me, id: el.dataset.id });
+    showToast("It's on your list.", 2500);
+  },
+  'add-hours'() {
+    S.forms.addHours = {};
+    S.errors.addHours = '';
+    openSheet('addHours');
+  },
+  'fix-hours'(el) {
+    const entry = S.view.hours.entries.find((one) => one.id === el.dataset.id);
+    if (!entry) return;
+    S.errors.fix = '';
+    openSheet('fixHours', { id: entry.id, dayLabel: entry.dayLabel, in: entry.in });
+  },
+
+  /* schedule */
+  'sched-week'(el) {
+    S.schedWeek = el.dataset.week;
+    render();
+  },
+  'day-toggle'(el) {
+    const date = el.dataset.date;
+    const isToday = S.view && date === S.view.now.date;
+    const open = S.schedOpen[date] !== undefined ? S.schedOpen[date] : isToday;
+    S.schedOpen[date] = !open;
+    render();
+  },
+
+  /* availability */
+  'avail-week'(el) {
+    const weekOf = el.dataset.week;
+    S.avail.week = weekOf;
+    S.avail.chosen = true;
+    place.set('week', weekOf);
+    S.avail.success = null;
+    loadAvailabilityWeek(weekOf);
+    render();
+  },
+  'avail-retry'() {
+    S.avail.error = '';
+    render();
+    loadAvailabilityTab();
+  },
+  'avail-copy'() {
+    const weekOf = S.avail.week;
+    const data = S.avail.data[weekOf];
+    if (!data || !data.last) return;
+    changeSlots((current) => {
+      current.slots = JSON.parse(JSON.stringify(data.last.slots || {}));
+      current.hoursWanted = data.last.hoursWanted;
+      current.hoursError = '';
+      delete current.hoursText;
+    });
+    availForm(weekOf).message = 'Copied the week of ' + monthDay(data.last.weekOf) + '. Check it over, then save.';
+    render();
+  },
+  'avail-none'() {
+    const weekOf = S.avail.week;
+    const week = availWeeks(S.view).find((one) => one.weekOf === weekOf);
+    S.errors.confirm = '';
+    openSheet('confirm', { title: "Can't work " + (week ? week.label : 'this week') + '?', body: "We won't schedule you that week.", yes: "Yes, I can't work", run: 'availNone', weekOf });
+  },
+  'avail-reopen'() {
+    const current = availForm(S.avail.week);
+    if (current) current.editing = true;
+    render();
+  },
+  'avail-clear'() {
+    changeSlots((current) => { current.slots = {}; });
+  },
+  'avail-save'() { saveAvailability(); },
+  'avail-another'() {
+    const view = S.view;
+    const previous = S.avail.success ? S.avail.success.weekOf : S.avail.week;
+    const weeks = view.availability.weeks;
+    const index = weeks.findIndex((week) => week.weekOf === previous);
+    const later = weeks.slice(index + 1).find((week) => week.status === 'missing');
+    const any = weeks.find((week) => week.status === 'missing');
+    S.avail.week = (later || any || weeks[Math.min(index + 1, weeks.length - 1)] || weeks[0]).weekOf;
+    S.avail.chosen = true;
+    place.set('week', S.avail.week);
+    S.avail.success = null;
+    loadAvailabilityWeek(S.avail.week);
+    render();
+    window.scrollTo(0, 0);
+  },
+  slot(el) {
+    const hour = Number(el.dataset.hour);
+    const key = el.dataset.day;
+    changeSlots((current) => setSlot(current.slots, key, hour, el.getAttribute('aria-pressed') !== 'true'));
+  },
+  'slot-day'(el) {
+    const key = el.dataset.day;
+    changeSlots((current, data) => {
+      const all = data.hours.every((hour) => (current.slots[key] || []).indexOf(hour) >= 0);
+      data.hours.forEach((hour) => setSlot(current.slots, key, hour, !all));
+    });
+  },
+  'slot-hour'(el) {
+    const hour = Number(el.dataset.hour);
+    changeSlots((current, data) => {
+      const days = data.days.filter((day) => !dayBlocked(day));
+      const all = days.every((day) => (current.slots[day.key] || []).indexOf(hour) >= 0);
+      days.forEach((day) => setSlot(current.slots, day.key, hour, !all));
+    });
+  },
+  'hours-step'(el) {
+    if (stepHeld) {
+      stepHeld = false;
+      return;
+    }
+    stepHours(Number(el.dataset.delta));
+  },
+  'off-remove'(el) {
+    Q.add('timeOffRemove', { name: S.me, id: el.dataset.id });
+  },
+
+  /* sheets */
+  'sheet-close'() { closeSheet(); },
+  'sheet-dismiss'(el, event) {
+    if (event.target === el && pressedOn === el) closeSheet();
+  },
+  async 'confirm-yes'() {
+    const data = S.sheet && S.sheet.data;
+    if (!data || isBusy('confirm')) return;
+    S.busy.confirm = true;
+    S.errors.confirm = '';
+    render();
+    let reply;
+    try {
+      reply = await CONFIRMED[data.run](data);
+    } catch (err) {
+      reply = { ok: false, error: OFFLINE_MESSAGE };
+    }
+    S.busy.confirm = false;
+    if (reply.ok === false) {
+      S.errors.confirm = reply.error;
+      render();
+    } else {
+      closeSheet();
+    }
+  },
+
+  /* manage */
+  'mgr-sub'(el) {
+    S.mgr.sub = el.dataset.sub;
+    S.mgr.added = '';
+    place.set('mgrSub', S.mgr.sub);
+    loadManage();
+    render();
+    if (S.mgr.sub === 'oneoffs' && HAS_MOUSE) {
+      const box = $('#oneoff-title');
+      if (box) box.focus({ preventScroll: true });
+    }
+  },
+  'mgr-week'(el) {
+    if (!el.dataset.week) return;
+    S.mgr.weekOf = el.dataset.week;
+    S.mgr.uncAll = false;
+    loadBoard(S.mgr.weekOf);
+    render();
+  },
+  'unc-all'() {
+    S.mgr.uncAll = !S.mgr.uncAll;
+    render();
+  },
+  'mgr-retry'() {
+    S.mgr.boardErr = '';
+    S.mgr.hoursErr = '';
+    render();
+    loadManage();
+  },
+  'mgr-group'(el) {
+    const key = el.dataset.key2;
+    const date = key.split('|')[0];
+    const isToday = S.view && date === S.view.now.date;
+    const open = S.mgr.open[key] !== undefined ? S.mgr.open[key] : isToday;
+    S.mgr.open[key] = !open;
+    render();
+  },
+  async assign(el) {
+    const id = el.dataset.id;
+    const key = 'assign:' + id;
+    const state = form(key);
+    const board = S.mgr.boards[S.mgr.weekOf];
+    if (!state.name) {
+      S.errors[key] = 'Pick a person first.';
+      render();
+      return;
+    }
+    const days = assignableDays(board, S.view);
+    const task = board.days.reduce((found, day) => found || day.uncovered.find((one) => one.id === id), null);
+    const date = state.date || (task && days.some((day) => day.date === task.date) ? task.date : days[0].date);
+    S.busy[key] = true;
+    S.errors[key] = '';
+    render();
+    try {
+      const reply = await apiWrite('mgrAssign', { code: S.code, id, name: state.name, date, by: S.me });
+      if (reply.ok === false) {
+        S.errors[key] = reply.error;
+      } else {
+        showToast(firstName(state.name) + ' has it now.');
+        delete S.forms[key];
+        await loadBoard(S.mgr.weekOf, true);
+      }
+    } catch (err) {
+      S.errors[key] = OFFLINE_MESSAGE;
+    }
+    S.busy[key] = false;
+    render();
+  },
+  move(el) {
+    const board = S.mgr.boards[S.mgr.weekOf];
+    const days = assignableDays(board, S.view);
+    let title = '';
+    board.days.forEach((day) => day.groups.forEach((group) => group.tasks.forEach((task) => {
+      if (task.id === el.dataset.id) title = task.title;
+    })));
+    S.forms.move = { name: '', date: days.some((day) => day.date === el.dataset.date) ? el.dataset.date : days[0] ? days[0].date : '' };
+    S.errors.move = '';
+    openSheet('move', { id: el.dataset.id, title });
+  },
+  async 'mgr-remind'(el) {
+    if (isBusy('remind')) return;
+    S.busy.remind = true;
+    render();
+    try {
+      const reply = await apiWrite('mgrRemind', { code: S.code, weekOf: el.dataset.week, by: S.me });
+      if (reply.ok === false) showToast(reply.error);
+      else showToast(reply.sent.length ? 'Reminder sent to ' + nameList(reply.sent) + '.' : 'Nobody needed a reminder.');
+    } catch (err) {
+      showToast(OFFLINE_MESSAGE);
+    }
+    S.busy.remind = false;
+    render();
+  },
+  'mgr-rebuild'(el) {
+    S.errors.confirm = '';
+    openSheet('confirm', { title: 'Re-run matching?', body: 'Later days get matched again. Anything done, placed by hand, or already on someone\'s list today stays put.', yes: 'Re-run matching', run: 'rebuild', weekOf: el.dataset.week });
+  },
+  'oo-pick'(el) {
+    const name = el.dataset.formName;
+    const state = form(name);
+    const field = el.dataset.field;
+    const value = el.dataset.value;
+    if (field === 'who') {
+      if (!value) state.who = [];
+      else {
+        const who = state.who || [];
+        state.who = who.indexOf(value) >= 0 ? who.filter((one) => one !== value) : who.concat([value]);
+      }
+    } else if (field === 'minutes') {
+      state.minutes = Number(value);
+    } else {
+      state[field] = value;
+    }
+    if (field === 'weekOf') {
+      state.day = '';
+      if (name === 'oneoff') {
+        S.mgr.added = '';
+        loadBoard(value);
+      }
+    }
+    render();
+  },
+  'oo-edit'(el) {
+    const board = S.mgr.boards[form('oneoff').weekOf];
+    const item = board && board.oneOffs.find((one) => one.id === el.dataset.id);
+    if (!item) return;
+    S.forms.oneoffEdit = { title: item.title, details: item.details, priority: item.priority, minutes: item.minutes, weekOf: item.weekOf, day: item.day, who: item.who.slice() };
+    S.errors.oneoffEdit = '';
+    S.errors.oneoffEditTitle = '';
+    openSheet('editOneOff', { id: item.id, weekOf: item.weekOf });
+  },
+  'oo-delete'(el) {
+    const board = S.mgr.boards[form('oneoff').weekOf];
+    const item = board && board.oneOffs.find((one) => one.id === el.dataset.id);
+    S.errors.confirm = '';
+    openSheet('confirm', { title: 'Delete this one-off?', body: item ? item.title : '', yes: 'Delete', run: 'oneOffDelete', id: el.dataset.id });
+  },
+  'oo-retry'(el) {
+    const item = S.mgr.outbox.find((one) => one.tempId === el.dataset.id);
+    if (item) item.error = '';
+    S.errors.oneoffTitle = '';
+    render();
+    pumpOutbox();
+  },
+  'oo-discard'(el) {
+    S.mgr.outbox = S.mgr.outbox.filter((one) => one.tempId !== el.dataset.id);
+    S.errors.oneoffTitle = '';
+    render();
+  },
+  async 'copy-payroll'() {
+    const report = S.mgr.hours[S.mgr.month];
+    if (!report) return;
+    const text = report.people.map((person) => person.name + '\t' + hoursNumber(person.total)).join('\n');
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+    } catch (err) {
+      const box = document.createElement('textarea');
+      box.value = text;
+      box.style.position = 'fixed';
+      box.style.opacity = '0';
+      document.body.appendChild(box);
+      box.select();
+      try { copied = document.execCommand('copy'); } catch (inner) { copied = false; }
+      box.remove();
+    }
+    if (!copied) showToast("Couldn't copy. Your browser blocked it.");
+    else showToast(report.totalIssues ? 'Copied, but ' + plural(report.totalIssues, 'entry', 'entries') + ' still ' + (report.totalIssues === 1 ? 'needs' : 'need') + ' a fix.' : 'Copied. Paste it into the payroll sheet.');
+  },
+  'entry-edit'(el) {
+    const report = S.mgr.hours[S.mgr.month];
+    const person = report.people.find((one) => one.name === el.dataset.name);
+    const entry = person && person.entries.find((one) => one.id === el.dataset.id);
+    if (!entry) return;
+    S.forms.entry = { date: entry.date, start: labelToClock(entry.in), end: labelToClock(entry.out), note: entry.note || '' };
+    S.errors.entry = '';
+    openSheet('entry', { id: entry.id, name: person.name });
+  },
+  'entry-add'(el) {
+    S.forms.entry = { date: S.view.now.date.slice(0, 7) === S.mgr.month ? S.view.now.date : S.mgr.month + '-01', start: '', end: '', note: '' };
+    S.errors.entry = '';
+    openSheet('entry', { id: '', name: el.dataset.name });
+  },
+  'entry-delete'() {
+    const data = S.sheet.data;
+    S.errors.confirm = '';
+    S.sheet = { type: 'confirm', data: { title: 'Delete this entry?', body: 'This takes it out of ' + firstName(data.name) + "'s hours.", yes: 'Delete', run: 'entryDelete', id: data.id } };
+    render();
+  },
+};
+
+/* ------ forms ------ */
+
+const SUBMITS = {
+  async code() {
+    const value = (form('code').value || '').trim();
+    if (!value) {
+      S.errors.code = 'Please enter the code.';
+      render();
+      return;
+    }
+    S.busy.code = true;
+    S.errors.code = '';
+    render();
+    try {
+      const reply = await apiWrite('mgrCheck', { code: value });
+      if (reply.ok === false) {
+        S.errors.code = reply.error;
+      } else {
+        S.code = value;
+        store.set('code', value);
+        S.forms.code = {};
+        S.codeSkipped = false;
+        S.tab = 'manage';
+        S.tabChosen = true;
+        loadManage();
+      }
+    } catch (err) {
+      S.errors.code = OFFLINE_MESSAGE;
+    }
+    S.busy.code = false;
+    render();
+  },
+  async stale(el) {
+    const id = el.dataset.id;
+    const key = 'stale:' + id;
+    const time = form('stale')[id];
+    await sendClockFix(id, time, key, () => delete form('stale')[id]);
+  },
+  async fix(el) {
+    const id = el.dataset.id;
+    const time = form('fix')[id];
+    await sendClockFix(id, time, 'fix', () => {
+      delete form('fix')[id];
+      closeSheet();
+    });
+  },
+  async addHours() {
+    const state = form('addHours');
+    const date = state.date || S.view.now.date;
+    if (!state.start || !state.end) {
+      S.errors.addHours = 'Please pick when you started and finished.';
+      render();
+      return;
+    }
+    S.busy.addHours = true;
+    S.errors.addHours = '';
+    render();
+    try {
+      const reply = await apiWrite('hoursAdd', { name: S.me, date, start: state.start, end: state.end, note: state.note || '' });
+      if (reply.ok === false) {
+        S.errors.addHours = reply.error;
+      } else {
+        S.forms.addHours = {};
+        S.busy.addHours = false;
+        closeSheet();
+        showToast('Hours added.');
+        loadBoot();
+      }
+    } catch (err) {
+      S.errors.addHours = OFFLINE_MESSAGE;
+    }
+    S.busy.addHours = false;
+    render();
+  },
+  async off() {
+    const state = form('off');
+    if (!state.from) {
+      S.errors.off = 'Please pick the first date.';
+      S.errors.offOk = '';
+      render();
+      return;
+    }
+    S.busy.off = true;
+    S.errors.off = '';
+    S.errors.offOk = '';
+    render();
+    try {
+      const reply = await apiWrite('timeOffAdd', { name: S.me, from: state.from, to: state.to || state.from, note: state.note || '' });
+      if (reply.ok === false) {
+        S.errors.off = reply.error;
+      } else {
+        const affected = reply.affected || [];
+        const stuck = affected.filter((one) => !one.coveredBy).length;
+        S.errors.offOk = !affected.length
+          ? 'Saved.'
+          : stuck
+            ? 'Saved. We let the managers know.'
+            : 'Saved. Your ' + plural(affected.length, 'task') + (affected.length === 1 ? ' is' : ' are') + ' covered.';
+        S.forms.off = {};
+        loadBoot();
+        if (S.avail.week && S.view.me.type === 'Flexible') loadAvailabilityWeek(S.avail.week);
+      }
+    } catch (err) {
+      S.errors.off = OFFLINE_MESSAGE;
+    }
+    S.busy.off = false;
+    render();
+  },
+  async move(el) {
+    const state = form('move');
+    if (!state.name) {
+      S.errors.move = 'Pick a person first.';
+      render();
+      return;
+    }
+    S.busy.move = true;
+    S.errors.move = '';
+    render();
+    try {
+      const reply = await apiWrite('mgrAssign', { code: S.code, id: el.dataset.id, name: state.name, date: state.date, by: S.me });
+      if (reply.ok === false) {
+        S.errors.move = reply.error;
+      } else {
+        S.busy.move = false;
+        closeSheet();
+        showToast('Moved to ' + firstName(state.name) + '.');
+        loadBoard(S.mgr.weekOf, true);
+      }
+    } catch (err) {
+      S.errors.move = OFFLINE_MESSAGE;
+    }
+    S.busy.move = false;
+    render();
+  },
+  oneoff() {
+    const state = form('oneoff');
+    const title = (state.title || '').trim();
+    if (!title) {
+      S.errors.oneoffTitle = 'Please say what needs done.';
+      render();
+      const box = $('#oneoff-title');
+      if (box) box.focus();
+      return;
+    }
+    S.errors.oneoffTitle = '';
+    S.mgr.outbox.push({
+      tempId: uid(),
+      error: '',
+      req: { title, details: (state.details || '').trim(), priority: state.priority, minutes: Number(state.minutes), weekOf: state.weekOf, day: state.day || '', who: (state.who || []).slice() },
+    });
+    S.mgr.added = 'Saving...';
+    resetOneOffFields(state);
+    render();
+    const box = $('#oneoff-title');
+    if (box) box.focus();
+    pumpOutbox();
+  },
+  async oneoffEdit(el) {
+    const state = form('oneoffEdit');
+    if (!(state.title || '').trim()) {
+      S.errors.oneoffEditTitle = 'Please say what needs done.';
+      render();
+      const box = $('#oneoffEdit-title');
+      if (box) box.focus();
+      return;
+    }
+    S.busy.oneoffEdit = true;
+    S.errors.oneoffEdit = '';
+    S.errors.oneoffEditTitle = '';
+    render();
+    try {
+      const reply = await apiWrite('mgrOneOffEdit', { code: S.code, id: el.dataset.id, title: state.title.trim(), details: (state.details || '').trim(), priority: state.priority, minutes: Number(state.minutes), weekOf: state.weekOf, day: state.day || '', who: state.who || [], by: S.me });
+      if (reply.ok === false) {
+        S.errors.oneoffEdit = reply.error;
+      } else {
+        S.busy.oneoffEdit = false;
+        closeSheet();
+        showToast('Saved.');
+        await loadBoard(oneOffFormState().weekOf, true);
+      }
+    } catch (err) {
+      S.errors.oneoffEdit = OFFLINE_MESSAGE;
+    }
+    S.busy.oneoffEdit = false;
+    render();
+  },
+  async entry() {
+    const data = S.sheet.data;
+    const state = form('entry');
+    if (!state.date || !state.start) {
+      S.errors.entry = 'Please pick a day and a start time.';
+      render();
+      return;
+    }
+    if (!data.id && !state.end) {
+      S.errors.entry = 'Please pick a finish time.';
+      render();
+      return;
+    }
+    S.busy.entry = true;
+    S.errors.entry = '';
+    render();
+    try {
+      const reply = data.id
+        ? await apiWrite('mgrHoursEdit', { code: S.code, id: data.id, date: state.date, start: state.start, end: state.end || '', note: state.note || '', by: S.me })
+        : await apiWrite('mgrHoursAdd', { code: S.code, name: data.name, date: state.date, start: state.start, end: state.end, note: state.note || '', by: S.me });
+      if (reply.ok === false) {
+        S.errors.entry = reply.error;
+      } else {
+        S.busy.entry = false;
+        closeSheet();
+        showToast('Saved.');
+        loadMgrHours(S.mgr.month, true);
+      }
+    } catch (err) {
+      S.errors.entry = OFFLINE_MESSAGE;
+    }
+    S.busy.entry = false;
+    render();
+  },
+};
+async function sendClockFix(id, time, errorKey, done) {
+  if (!time) {
+    S.errors[errorKey] = 'Please pick a time.';
+    render();
+    return;
+  }
+  S.busy[errorKey] = true;
+  S.errors[errorKey] = '';
+  render();
+  try {
+    const reply = await apiWrite('clockFix', { name: S.me, id, out: time });
+    S.busy[errorKey] = false;
+    if (reply.ok === false && !reply.retry) {
+      S.errors[errorKey] = reply.error;
+      render();
+      return;
+    }
+    if (reply.ok === false) {
+      Q.add('clockFix', { name: S.me, id, out: time });
+    } else {
+      Q.gen += 1;
+      if (S.boot) {
+        applyWrite(S.boot, { action: 'clockFix', body: { id, out: time } });
+        if (reply.clock) S.boot.clock = reply.clock;
+        refreshView();
+      }
+      syncSoon(300);
+    }
+    done();
+    showToast('Saved.');
+  } catch (err) {
+    S.busy[errorKey] = false;
+    Q.add('clockFix', { name: S.me, id, out: time }); // a repeat with the same time is safe
+    done();
+    showToast("Saved on this phone. We'll send it when you're back online.");
+  }
+  render();
+}
+
+/* ---------------------------------------------------------------- page events ---- */
+
+document.addEventListener('click', (event) => {
+  const el = event.target.closest('[data-act]');
+  if (!el || el.disabled) return;
+  const run = A[el.dataset.act];
+  if (run) run(el, event);
+});
+document.addEventListener('submit', (event) => {
+  const el = event.target;
+  const run = SUBMITS[el.dataset.submit];
+  if (!run) return;
+  event.preventDefault();
+  run(el);
+});
+document.addEventListener('input', (event) => {
+  const el = event.target;
+  if (el.dataset.form) {
+    form(el.dataset.form)[el.dataset.field] = el.value;
+    const titleError = el.dataset.form + 'Title';
+    if (el.dataset.field === 'title' && S.errors[titleError]) {
+      S.errors[titleError] = '';
+      render();
+    }
+    if (el.dataset.form === 'off' && el.dataset.field === 'from') {
+      const state = form('off');
+      if (el.value && (!state.to || state.to < el.value)) state.to = el.value;
+      S.errors.offOk = '';
+      render();
+    }
+    return;
+  }
+  if (el.hasAttribute('data-avail-notes')) {
+    const current = availForm(S.avail.week);
+    if (current) {
+      current.notes = el.value;
+      saveDraft(S.avail.week);
+    }
+    return;
+  }
+  if (el.hasAttribute('data-avail-hours')) {
+    const current = availForm(S.avail.week);
+    if (!current) return;
+    current.hoursText = el.value;
+    const value = Number(el.value.replace(',', '.'));
+    current.hoursWanted = el.value === '' || !isFinite(value) ? null : Math.min(40, Math.max(0, value));
+    current.error = '';
+    current.hoursError = '';
+    saveDraft(S.avail.week);
+    render();
+  }
+});
+document.addEventListener('change', (event) => {
+  const el = event.target;
+  if (el.dataset.form) {
+    form(el.dataset.form)[el.dataset.field] = el.value; // some time pickers only report on change
+    return;
+  }
+  if (el.hasAttribute('data-avail-hours')) {
+    const current = availForm(S.avail.week);
+    if (!current) return;
+    commitHoursText(current);
+    saveDraft(S.avail.week);
+    render();
+    return;
+  }
+  if (el.dataset.actChange === 'mgr-month') {
+    S.mgr.month = el.value;
+    loadMgrHours(el.value);
+    render();
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if (!S.sheet) return;
+  if (event.key === 'Escape') {
+    closeSheet();
+    return;
+  }
+  if (event.key === 'Tab') {
+    const sheet = $('#sheet .sheet');
+    const items = Array.from(sheet.querySelectorAll('button:not([disabled]),input,select,textarea'));
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === sheet)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+});
+
+document.addEventListener('touchstart', () => {}, { passive: true }); // an iPhone only shows :active on a button if something listens for touches
+
+let pressedOn = null;
+document.addEventListener('pointerdown', (event) => { pressedOn = event.target; }, true);
+
+/* Holding the stepper keeps it going, so 8 hours doesn't take sixteen taps. */
+let stepHold = null;
+let stepHeld = false;
+function stopHold() {
+  clearTimeout(stepHold);
+  clearInterval(stepHold);
+  stepHold = null;
+}
+document.addEventListener('pointerdown', (event) => {
+  const el = event.target.closest('.step');
+  if (!el || el.disabled) return;
+  stepHeld = false;
+  const delta = Number(el.dataset.delta);
+  el.addEventListener('pointerleave', stopHold, { once: true });
+  stepHold = setTimeout(() => {
+    stepHeld = true;
+    stepHours(delta);
+    stepHold = setInterval(() => stepHours(delta), 110);
+  }, 450);
+});
+['pointerup', 'pointercancel'].forEach((name) => document.addEventListener(name, stopHold));
+window.addEventListener('blur', stopHold);
+document.addEventListener('contextmenu', (event) => {
+  if (event.target.closest('.step')) event.preventDefault();
+});
+
+/* Keep things fresh without anyone asking. */
+function refreshIfDue(minGap) {
+  if (document.hidden || !S.me) return;
+  if (Date.now() - lastRefresh < minGap) return;
+  loadBoot();
+  loadTab();
+  Q.nudgeNow();
+}
+/* A phone waking up redraws first, so a list from yesterday doesn't sit there live until the server answers. */
+function wake(minGap) {
+  if (!document.hidden) render();
+  refreshIfDue(minGap);
+}
+document.addEventListener('visibilitychange', () => wake(15000));
+window.addEventListener('focus', () => wake(15000));
+window.addEventListener('pagehide', () => Q.dropLease());
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) wake(0);
+});
+window.addEventListener('popstate', () => {
+  if (S.sheet) closeSheet();
+});
+window.addEventListener('online', () => {
+  Q.nudgeNow();
+  refreshIfDue(0);
+});
+setInterval(() => {
+  if (!document.hidden) renderFloat();
+}, 1000);
+setInterval(() => {
+  // The five-minute refresh, midnight, and the running time on the clock card.
+  if (document.hidden || !S.view) return;
+  refreshIfDue(staleDay() ? 20000 : 5 * 60 * 1000);
+  if (!S.sheet && S.view.clock.status === 'in') render();
+}, 30000);
+window.addEventListener('storage', (event) => {
+  if (event.key === STORE_PREFIX + 'queue') {
+    Q.load();
+    refreshView();
+    render();
+  }
+});
+
+/* ========================================================================= start ======= */
+
+function start() {
+  const link = new URLSearchParams(location.search);
+  const linkName = link.get('me');
+  const linkTab = link.get('tab');
+  const linkWeek = link.get('week');
+  if (location.search || (history.state && history.state.sheet)) history.replaceState(null, '', location.pathname + location.hash);
+
+  // Where this browser tab was only means something if it's still the same person.
+  const samePerson = !linkName || linkName === S.me;
+
+  const known = ['today', 'schedule', 'availability', 'hours', 'manage'];
+  if (linkTab && known.indexOf(linkTab) >= 0) {
+    S.tab = linkTab;
+    S.tabChosen = true;
+  } else if (linkWeek) {
+    S.tab = 'availability';
+    S.tabChosen = true;
+  } else if (samePerson) {
+    const remembered = place.get('tab');
+    if (remembered && known.indexOf(remembered) >= 0) {
+      S.tab = remembered;
+      S.tabChosen = true;
+    }
+  }
+  const week = linkWeek || (samePerson ? place.get('week') : '');
+  if (isMonday(week)) {
+    S.avail.week = week;
+    place.set('week', week);
+  }
+
+  if (linkName || S.me) {
+    signIn(linkName || S.me, S.avail.week);
+  } else {
+    render();
+    loadNames();
+  }
+  if (S.me && S.view) afterBoot();
+  render();
+}
+start();
+</script>
+</body>
+</html>
