@@ -373,6 +373,14 @@ svg{display:block;flex:none}
 .grid-count{font-size:16px;font-weight:600;color:var(--ink)}
 .grid-note{margin-top:2px;font-size:15px;color:var(--muted)}
 .off-note{margin-top:8px;font-size:15px;color:var(--muted)}
+#extras{padding:18px 20px 20px}
+.extras{list-style:none;margin:12px 0 0;padding:0}
+.extra-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.extra-text{min-width:0;overflow-wrap:anywhere}
+.mextras{margin-top:10px;padding:10px 16px 14px;border-top:1px solid var(--line);font-size:15px}
+.mextras-head{margin:0 0 4px;font-weight:600;color:var(--ink)}
+.mextras ul{list-style:none;margin:0;padding:0}
+.mextras li{padding:2px 0;overflow-wrap:anywhere}
 .done-card{padding:32px 20px;text-align:center}
 .done-card .lead,.empty p{text-wrap:balance}
 .done-card .title{margin-bottom:6px}
@@ -1396,6 +1404,8 @@ function readOnce(key, fresh, work) {
 
 /* Availability, one week at a time. */
 function availFirstWeek(view) {
+  const heldNow = view.availability.weeks.find((week) => week.held);
+  if (heldNow) return heldNow.weekOf;
   const weeks = view.availability.weeks.filter((week) => week.weekOf !== view.week.thisWeek.weekOf); // a week under way is there if they want it, but it's not where to land
   const first = weeks.find((week) => !week.past || week.status === 'missing');
   return (first || weeks[0]).weekOf;
@@ -1950,7 +1960,31 @@ function viewToday() {
             : ''}
         </section>`
       : viewNothingToday(view)}
-    ${viewOpenTasks(view)}`;
+    ${viewOpenTasks(view)}
+    ${viewExtras(view)}`;
+}
+function viewExtras(view) {
+  const state = form('extra');
+  const items = view.today.extras || [];
+  return html`
+    <section class="card sec" id="extras" aria-label="Anything else you did today">
+      <h2 class="h3">Anything else you did today?</h2>
+      ${items.length
+        ? html`<ul class="extras">${items.map((item) => html`
+            <li class="extra-row" data-key="x:${item.id}">
+              <span class="extra-text">${item.text}</span>
+              <button type="button" class="link" data-act="extra-remove" data-id="${item.id}" aria-label="Remove: ${item.text}">Remove</button>
+            </li>`)}</ul>`
+        : ''}
+      <form data-submit="extra" novalidate>
+        <label class="field">
+          <span class="label">Write it here so we know</span>
+          <input class="input" type="text" maxlength="500" placeholder="Fixed the loose rower chain" data-form="extra" data-field="text" value="${state.text || ''}">
+        </label>
+        ${fieldError('extra')}
+        <button type="submit" class="btn btn-line form-btn" ${isBusy('extra') ? new Safe('disabled') : ''}>${isBusy('extra') ? 'Saving...' : 'Add'}</button>
+      </form>
+    </section>`;
 }
 
 /* ---- schedule ---- */
@@ -1993,7 +2027,7 @@ function viewSchedule() {
     body = html`
       <div class="card empty" style="margin-top:16px">
         <span class="badge">${I.schedule}</span>
-        <p class="h3">${which === 'nextWeek' ? "Next week's schedule comes out Friday at 7 AM." : "This week's schedule isn't out yet."}</p>
+        <p class="h3">${which === 'nextWeek' ? (week.held ? "Next week's schedule comes out once everyone has submitted." : "Next week's schedule comes out Friday at 7 AM.") : "This week's schedule isn't out yet."}</p>
       </div>`;
   } else {
     body = html`
@@ -2151,6 +2185,7 @@ function viewAvailSuccess(success) {
   else if (success.picked && success.picked.length) line = html`<p class="lead">You picked up ${plural(success.picked.length, 'task')} for ${dates}. They're on your schedule.</p>`;
   else if (success.late) line = html`<p class="lead">It's past the deadline, so you'll only get tasks that are left.</p>`;
   else if (success.past) line = html`<p class="lead">We saved your changes.</p>`;
+  else if (success.held) line = html`<p class="lead">Your schedule comes out once everyone has submitted.</p>`;
   else line = html`<p class="lead">Your schedule comes out Friday at 7 AM.</p>`;
   return html`
     <div class="card done-card">
@@ -2454,6 +2489,13 @@ function viewMgrDay(day, board, view) {
             ${open ? html`<ul class="mtasks">${group.tasks.map((task) => viewMgrTask(task, day, board, view))}</ul>` : ''}
           </div>`;
       })}
+      ${(day.extras || []).length
+        ? html`
+          <div class="mextras">
+            <p class="mextras-head">Also done</p>
+            <ul>${day.extras.map((item) => html`<li><b>${firstNameOrFull(item.name, board.staffNames)}:</b> ${item.text}</li>`)}</ul>
+          </div>`
+        : ''}
       ${missed.length ? html`<p class="empty-line" style="padding-top:10px;border-top:1px solid var(--line)">Missed, nobody on it: ${missed.map((task) => task.title).join(', ')}</p>` : ''}
     </section>`;
 }
@@ -2526,14 +2568,14 @@ function viewMgrWeek(view) {
       </section>`
     : '';
   // Before it's built there's nothing to show day by day. What matters is who's in.
-  const unbuilt = !board.published && !board.days.some((day) => day.groups.length || day.uncovered.length);
+  const unbuilt = !board.published && !board.days.some((day) => day.groups.length || day.uncovered.length || (day.extras || []).length);
   return html`
     <div class="wk-switch">
       <button type="button" class="wk-arrow back" data-act="mgr-week" data-week="${prev ? prev.weekOf : ''}" aria-label="Earlier week" ${prev ? '' : new Safe('disabled')}>${I.chevron}</button>
       <h2 class="h2">${board.label}</h2>
       <button type="button" class="wk-arrow" data-act="mgr-week" data-week="${next ? next.weekOf : ''}" aria-label="Later week" ${next ? '' : new Safe('disabled')}>${I.chevron}</button>
     </div>
-    <p class="built">${board.published ? 'Went out ' + board.builtAt : 'Not out yet. It goes out Friday at 7 AM.'}</p>
+    <p class="built">${board.published ? 'Went out ' + board.builtAt : board.held ? 'On hold. It goes out once it gets released.' : 'Not out yet. It goes out Friday at 7 AM.'}</p>
     <p class="on-clock${board.onClock.length ? '' : ' is-none'}">
       <b>On the clock now:</b>
       ${board.onClock.length ? board.onClock.map((one, i) => (i ? ', ' : ' ') + firstNameOrFull(one.name, board.staffNames) + ' since ' + one.since).join('') : ' Nobody'}
@@ -2626,7 +2668,7 @@ function oneOffStatus(item, board) {
   } else if (item.assignedTo) {
     parts.push(firstName(item.assignedTo) + ', ' + item.assignedLabel);
   } else if (!board || !board.published) {
-    parts.push('Goes out Friday at 7 AM' + (item.day ? ', for ' + DAY_LONG[item.day] : ''));
+    parts.push((board && board.held ? 'Goes out with the schedule' : 'Goes out Friday at 7 AM') + (item.day ? ', for ' + DAY_LONG[item.day] : ''));
   }
   return parts.join('');
 }
@@ -3163,7 +3205,7 @@ async function postAvailability(weekOf, none) {
   store.del('avail.' + S.me + '.' + weekOf);
   const week = availWeeks(S.view).find((one) => one.weekOf === weekOf);
   markWeekSaved(weekOf, none, none ? 0 : current.hoursWanted, reply.late);
-  S.avail.success = { weekOf, label: week ? week.label : '', none: !!none, late: reply.late, past: !!data.past, picked: reply.picked || [] };
+  S.avail.success = { weekOf, label: week ? week.label : '', none: !!none, late: reply.late, past: !!data.past, held: !!data.held, picked: reply.picked || [] };
   return reply;
 }
 async function saveAvailability() {
@@ -3273,7 +3315,7 @@ async function pumpOutbox() {
       S.mgr.outbox = S.mgr.outbox.filter((one) => one !== item);
       const board = S.mgr.boards[item.req.weekOf];
       if (board && !board.oneOffs.some((one) => one.id === reply.id)) board.oneOffs.push(reply.oneOff);
-      if (reply.placed === null) S.mgr.added = 'Added. It goes out Friday at 7 AM.';
+      if (reply.placed === null) S.mgr.added = board && board.held ? 'Added. It goes out with the schedule.' : 'Added. It goes out Friday at 7 AM.';
       else if (reply.placed.name) S.mgr.added = 'Added. ' + firstName(reply.placed.name) + ' has it on ' + reply.oneOff.assignedLabel + '.';
       else S.mgr.added = 'Added. Nobody fits it yet, so it shows as uncovered.';
       render();
@@ -3370,6 +3412,17 @@ const A = {
     if (tooSoon('claim:' + el.dataset.id, 800)) return;
     Q.add('taskClaim', { name: S.me, id: el.dataset.id });
     showToast("It's on your list.", 2500);
+  },
+  async 'extra-remove'(el) {
+    S.errors.extra = '';
+    try {
+      const reply = await apiWrite('extraRemove', { name: S.me, id: el.dataset.id });
+      if (reply.ok === false) S.errors.extra = reply.error;
+      else saveExtras(reply.extras);
+    } catch (err) {
+      S.errors.extra = OFFLINE_MESSAGE;
+    }
+    render();
   },
   'add-hours'() {
     S.forms.addHours = {};
@@ -3705,6 +3758,12 @@ const A = {
 
 /* ------ forms ------ */
 
+function saveExtras(extras) {
+  Q.gen += 1; // a read that started before this can't put the old list back
+  if (S.boot) S.boot.today.extras = extras;
+  refreshView();
+}
+
 const SUBMITS = {
   async code() {
     const value = (form('code').value || '').trim();
@@ -3748,6 +3807,32 @@ const SUBMITS = {
       delete form('fix')[id];
       closeSheet();
     });
+  },
+  async extra() {
+    const state = form('extra');
+    const text = (state.text || '').trim();
+    if (!text) {
+      S.errors.extra = 'Please say what you did.';
+      render();
+      return;
+    }
+    S.busy.extra = true;
+    S.errors.extra = '';
+    render();
+    try {
+      const reply = await apiWrite('extraAdd', { name: S.me, text });
+      if (reply.ok === false) {
+        S.errors.extra = reply.error;
+      } else {
+        if ((form('extra').text || '').trim() === text) S.forms.extra = {};
+        saveExtras(reply.extras);
+        showToast('Added.');
+      }
+    } catch (err) {
+      S.errors.extra = OFFLINE_MESSAGE;
+    }
+    S.busy.extra = false;
+    render();
   },
   async addHours() {
     const state = form('addHours');

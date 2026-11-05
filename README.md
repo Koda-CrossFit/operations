@@ -10,8 +10,11 @@ Staff sign in by tapping their name. Managers enter a short code once per device
 2. **Friday at 7:00 AM** the schedule for the coming Monday to Sunday is built. Anyone who didn't submit gets an email, everyone with work gets their week, and the managers get a summary.
 3. Tasks go out by priority (A, then B, then C), and people by rank, best first, up to the hours they asked for.
 4. Anyone who submits after the deadline only gets what's left over. Nobody else's work moves. Someone who was on time stays on time when they change their answer later, unless they offer more than before (new hours, or more hours wanted).
-5. Every night a little after 12:30 AM, unfinished work is sorted out. A daily task counts as missed. A one-off rolls to today, and so does any other task unless the same task already has a row today or tomorrow. A forgotten clock-out gets flagged. A shift can run past midnight: an entry stays on the clock for 12 hours after clocking in, and anything older counts as a forgotten clock-out.
+5. Every night a little after 12:30 AM, unfinished work is sorted out. A daily task counts as missed. A one-off rolls to today, and so does any other task unless the same task already has a row today or tomorrow. Floors never moves: if it isn't checked off, it's marked missed where it is and the managers get an email. A forgotten clock-out gets flagged. A shift can run past midnight: an entry stays on the clock for 12 hours after clocking in, and anything older counts as a forgotten clock-out.
 6. On the 1st of each month at 7:00 AM, the managers get last month's hours.
+7. Staff can write in anything extra they did on the Today tab. It's saved on the `Extra Work` tab, and managers see it under that day on Manage.
+
+A manager can put one week on hold with the `mgrHoldWeek` request. That week has no deadline, nobody counts as late, and Friday's run waits. `mgrRunHeldWeek` builds it and sends the emails. Run it before that day's work starts, since a run late in the day still hands out that day's set work. A hold only suits a week with no unfinished work before it, like the first week: the nightly would roll old work into the unbuilt week, and the run would then add it again.
 
 ## The sheet
 
@@ -31,6 +34,7 @@ Everything lives in the "Koda Operations" Google Sheet. Columns are found by the
 | Log | A line for every change anyone makes |
 | Settings | Test mode, who gets email, and the site's address |
 | Closed Days | Days the gym is closed. Nothing is scheduled on them |
+| Extra Work | What staff wrote in that they did beyond their list |
 
 ## Changing things
 
@@ -70,7 +74,7 @@ To go live:
 
 The Friday run goes out once. If it ran while `live` was still FALSE, that week's emails went only to `test_email`, and turning `live` on afterward doesn't send them again. To send them for real: set `live` to TRUE, then in the Apps Script editor open Project Settings, Script Properties, and delete the property named `RUN_WEEK_2026-11-09_DONE` (with that week's Monday in it). Do it before that Monday, since the job only looks at the coming week. The next run, within 5 minutes, sends everything to the real people. It doesn't rebuild the schedule.
 
-`test_email` also gets a note whenever an automatic job fails, live or not. `first_week` is the first Monday the site schedules. Weeks before it are skipped, and Manage won't take a one-off or a Re-run for one. `thursday_heads_up` set to TRUE adds a Thursday 7 AM reminder to anyone missing availability.
+`test_email` also gets a note whenever an automatic job fails, live or not. `first_week` is the first Monday the site schedules. Weeks before it are skipped, and Manage won't take a one-off or a Re-run for one. `thursday_heads_up` set to TRUE adds a Thursday 1:45 PM reminder to anyone missing availability.
 
 ## Deploying the backend
 

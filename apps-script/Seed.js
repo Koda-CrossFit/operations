@@ -163,7 +163,7 @@ function seedSettings_(req, managers, warnings) {
     ['test_email', testEmail || emails[0] || '', 'Gets every email while live is not TRUE, and any automation failure.'],
     ['site_url', text_(req.siteUrl) || DEFAULT_SITE_URL_, 'Used for the links in emails.'],
     ['first_week', '2026-11-09', 'The first Monday the site schedules. Weeks before it are skipped.'],
-    ['thursday_heads_up', 'FALSE', 'TRUE sends a Thursday 7 AM reminder to anyone missing availability.'],
+    ['thursday_heads_up', 'FALSE', 'TRUE sends a Thursday 1:45 PM reminder to anyone missing availability.'],
   ];
   var existing = Object.create(null);
   readTab_(TABS_.SETTINGS).forEach(function (row) {

@@ -64,6 +64,8 @@ function actionTable_() {
     clockOut: { run: apiClockOut_, write: true },
     clockFix: { run: apiClockFix_, write: true },
     hoursAdd: { run: apiHoursAdd_, write: true },
+    extraAdd: { run: apiExtraAdd_, write: true },
+    extraRemove: { run: apiExtraRemove_, write: true },
 
     mgrCheck: { run: apiMgrCheck_, manager: true },
     mgrBoard: { run: apiMgrBoard_, manager: true },
@@ -73,6 +75,8 @@ function actionTable_() {
     mgrOneOffDelete: { run: apiMgrOneOffDelete_, manager: true, write: true },
     mgrAssign: { run: apiMgrAssign_, manager: true, write: true },
     mgrRebuild: { run: apiMgrRebuild_, manager: true, write: true },
+    mgrHoldWeek: { run: apiMgrHoldWeek_, manager: true, write: true },
+    mgrRunHeldWeek: { run: apiMgrRunHeldWeek_, manager: true, write: true },
     mgrRemind: { run: apiMgrRemind_, manager: true, write: true },
     mgrHoursAdd: { run: apiMgrHoursAdd_, manager: true, write: true },
     mgrHoursEdit: { run: apiMgrHoursEdit_, manager: true, write: true },
@@ -354,7 +358,7 @@ function weekView_(person, weekOf) {
   var rows = scheduleForWeek_(weekOf).filter(function (row) {
     return row.name === person.name;
   });
-  return {
+  return withHeld_(weekOf, {
     weekOf: weekOf,
     label: weekLabel_(weekOf),
     published: isPublished_(weekOf),
@@ -372,7 +376,13 @@ function weekView_(person, weekOf) {
         closed: closedNote_(date),
       };
     }),
-  };
+  });
+}
+
+/** Adds held:true to a view of a week on hold, and nothing otherwise. */
+function withHeld_(weekOf, view) {
+  if (isHeld_(weekOf)) view.held = true;
+  return view;
 }
 
 function todayView_(person, info) {
@@ -414,7 +424,19 @@ function todayView_(person, info) {
       })
     ).map(taskView_),
     next: next,
+    extras: extrasOf_(person.name, info.date),
   };
+}
+
+/** What this person wrote in for this day, beyond their list. */
+function extrasOf_(name, date) {
+  return extraRows_()
+    .filter(function (row) {
+      return row.name === name && row.date === date;
+    })
+    .map(function (row) {
+      return { id: row.id, text: row.text };
+    });
 }
 
 function availabilityStatus_(row) {
@@ -426,7 +448,7 @@ function availabilityWeeks_(person, info) {
   var first = nextMonday_(info.date);
   var line = function (weekOf) {
     var row = availabilityRow_(person.name, weekOf);
-    return {
+    return withHeld_(weekOf, {
       weekOf: weekOf,
       label: weekLabel_(weekOf),
       deadline: deadlineLabel_(weekOf),
@@ -434,11 +456,11 @@ function availabilityWeeks_(person, info) {
       status: availabilityStatus_(row),
       late: row ? row.late : false,
       hoursWanted: row ? row.hoursWanted : null,
-    };
+    });
   };
   var weeks = [];
   // Someone who never answered can still pick up what's left of the week already under way.
-  if (person.type === 'Flexible' && isPublished_(info.monday) && !availabilityRow_(person.name, info.monday)) weeks.push(line(info.monday));
+  if (person.type === 'Flexible' && (isHeld_(info.monday) || (isPublished_(info.monday) && !availabilityRow_(person.name, info.monday)))) weeks.push(line(info.monday));
   for (var i = 0; i < WEEKS_AHEAD_; i++) weeks.push(line(addDays_(first, i * 7)));
   return weeks;
 }
@@ -523,7 +545,7 @@ function apiAvailability_(req) {
   var row = availabilityRow_(person.name, weekOf);
   var hours = [];
   for (var hour = SLOT_FIRST_HOUR_; hour <= SLOT_LAST_HOUR_; hour++) hours.push(hour);
-  return {
+  return withHeld_(weekOf, {
     weekOf: weekOf,
     days: weekDates_(weekOf).map(function (date) {
       return {
@@ -544,7 +566,7 @@ function apiAvailability_(req) {
     deadline: deadlineLabel_(weekOf),
     past: pastDeadline_(weekOf, info),
     last: lastSubmission_(person.name, weekOf),
-  };
+  });
 }
 
 /** The most recent earlier week with hours in it, for Copy Last Week. A "can't work" week has nothing to copy. */
@@ -795,7 +817,7 @@ function apiSaveAvailability_(req) {
   log_(person.name, late ? 'availability (late)' : 'availability', weekOf + ': ' + cells.Readable + ', ' + hoursWanted + ' hours');
 
   var picked = [];
-  if (past && isPublished_(weekOf)) {
+  if ((past || isHeld_(weekOf)) && isPublished_(weekOf)) {
     var outcome = lateFill_(person, weekOf, info);
     picked = outcome.picked;
     var overage = changed ? availabilityOverage_(person, weekOf, info) : [];
@@ -1208,6 +1230,37 @@ function apiHoursAdd_(req) {
   return { entry: entryView_(requireEntry_(id)) };
 }
 
+/* ---------------------------------------------------------- staff: extra work ---- */
+
+/** Something they did today that wasn't on their list. Saying the same thing twice saves once, so a retry can't double it. */
+function apiExtraAdd_(req) {
+  var person = requireStaff_(req.name);
+  var info = nowInfo_();
+  var text = cleanText_(req.text, MAX_TEXT_);
+  if (!text) fail_('Please say what you did.');
+  var already = extraRows_().some(function (row) {
+    return row.name === person.name && row.date === info.date && row.text === text;
+  });
+  if (!already) {
+    appendRows_(TABS_.EXTRA, [{ ID: newId_('X-'), Date: info.date, Name: person.name, Work: text, 'Added At': info.now }]);
+    log_(person.name, 'extra work', text);
+  }
+  return { extras: extrasOf_(person.name, info.date) };
+}
+
+function apiExtraRemove_(req) {
+  var person = requireStaff_(req.name);
+  var wanted = text_(req.id);
+  var row = extraRows_().filter(function (candidate) {
+    return candidate.id === wanted && candidate.name === person.name;
+  })[0];
+  if (row) {
+    deleteRows_(TABS_.EXTRA, [row._row]);
+    log_(person.name, 'extra work removed', row.text);
+  }
+  return { extras: extrasOf_(person.name, nowInfo_().date) };
+}
+
 /* ---------------------------------------------------------------- managers ---- */
 
 function apiMgrCheck_() {
@@ -1237,9 +1290,14 @@ function boardWeeks_(info) {
   scheduleRows_().forEach(function (row) {
     weeks[mondayOf_(row.date)] = true;
   });
+  var withExtras = Object.create(null);
+  extraRows_().forEach(function (row) {
+    weeks[mondayOf_(row.date)] = true;
+    withExtras[mondayOf_(row.date)] = true;
+  });
   return Object.keys(weeks)
     .filter(function (weekOf) {
-      return weekOf >= first;
+      return weekOf >= first || withExtras[weekOf];
     })
     .sort()
     .slice(-10)
@@ -1284,6 +1342,13 @@ function boardDay_(date, weekRows) {
         return !row.name;
       })
       .map(managerTaskView_),
+    extras: extraRows_()
+      .filter(function (row) {
+        return row.date === date;
+      })
+      .map(function (row) {
+        return { name: row.name, text: row.text, at: timeLabel_(row.addedAt) };
+      }),
   };
 }
 
@@ -1374,7 +1439,7 @@ function apiMgrBoard_(req) {
   var info = nowInfo_();
   var weekOf = text_(req.weekOf) ? requireMonday_(req.weekOf) : info.monday;
   var weekRows = scheduleForWeek_(weekOf);
-  var coming = nextMonday_(info.date);
+  var coming = heldWeek_() || nextMonday_(info.date); // while a week is on hold, it's the one still being waited on
   var people = staff_().filter(function (person) {
     if (person.type === 'Manager') {
       return weekRows.some(function (row) {
@@ -1383,7 +1448,7 @@ function apiMgrBoard_(req) {
     }
     return person.active;
   });
-  return {
+  return withHeld_(weekOf, {
     weekOf: weekOf,
     label: weekLabel_(weekOf),
     published: isPublished_(weekOf),
@@ -1417,7 +1482,7 @@ function apiMgrBoard_(req) {
     staffNames: activeStaff_().map(function (person) {
       return person.name;
     }),
-  };
+  });
 }
 
 /* ------------------------------------------------------------ managers: one-offs ---- */
@@ -1602,7 +1667,7 @@ function apiMgrRebuild_(req) {
   var info = nowInfo_();
   if (addDays_(weekOf, 6) < info.date) fail_('That week is already over.');
   requireFromFirstWeek_(weekOf);
-  if (!isPublished_(weekOf) && !pastDeadline_(weekOf, info)) fail_("That week's schedule hasn't been built yet. It builds Friday at 7 AM.");
+  if (!isPublished_(weekOf) && !pastDeadline_(weekOf, info)) fail_(isHeld_(weekOf) ? "That week is on hold, so it hasn't been built yet." : "That week's schedule hasn't been built yet. It builds Friday at 7 AM.");
 
   var rows = scheduleForWeek_(weekOf);
   var coversPastSetDay = function (row) {
@@ -1659,6 +1724,34 @@ function apiMgrRebuild_(req) {
       return !row.name;
     }).length,
   };
+}
+
+/** Puts a week on hold: no deadline, nobody counts as late, and the Friday run waits. One week at a time. */
+function apiMgrHoldWeek_(req) {
+  var weekOf = requireMonday_(req.weekOf);
+  if (isPublished_(weekOf)) fail_('That week has already been built.');
+  var held = heldWeek_();
+  if (held && held !== weekOf) fail_('The week of ' + monthDay_(held) + ' is still on hold. Please run it first.');
+  PropertiesService.getScriptProperties().setProperty(PROP_HOLD_WEEK_, weekOf);
+  req_().held = weekOf;
+  log_(managerName_(req.by), 'week held', 'Week of ' + weekOf);
+  return { held: weekOf };
+}
+
+/** Runs the week on hold now: builds it and sends the emails. The hold stays until that finishes, so a failed run can be run again. */
+function apiMgrRunHeldWeek_(req) {
+  var weekOf = heldWeek_();
+  if (!weekOf) fail_('No week is on hold.');
+  if (addDays_(weekOf, 6) < nowInfo_().date) {
+    PropertiesService.getScriptProperties().deleteProperty(PROP_HOLD_WEEK_);
+    req_().held = '';
+    fail_('That week is already over, so nothing went out.');
+  }
+  weeklyRun_(weekOf);
+  PropertiesService.getScriptProperties().deleteProperty(PROP_HOLD_WEEK_);
+  req_().held = '';
+  log_(managerName_(req.by), 'held week run', 'Week of ' + weekOf);
+  return { weekOf: weekOf, rows: scheduleForWeek_(weekOf).length };
 }
 
 function apiMgrRemind_(req) {

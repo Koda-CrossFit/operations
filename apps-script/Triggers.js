@@ -58,9 +58,9 @@ function dueJobs_(info, markers) {
       },
     });
   }
-  // Thursday 7 AM, up until the deadline itself.
-  var headsUpAt = addDays_(weekOf, -4) + ' ' + DEADLINE_TIME_;
-  if (!markers[PROP_THURSDAY_PREFIX_ + weekOf] && info.stamp >= headsUpAt && !pastDeadline_(weekOf, info)) {
+  // Thursday afternoon, up until the deadline itself.
+  var headsUpAt = addDays_(weekOf, -4) + ' ' + HEADS_UP_TIME_;
+  if (!markers[PROP_THURSDAY_PREFIX_ + weekOf] && !isHeld_(weekOf) && info.stamp >= headsUpAt && !pastDeadline_(weekOf, info)) {
     jobs.push({
       name: 'heads-up',
       run: function () {
@@ -220,6 +220,7 @@ function canWorkOn_(name, date) {
  * For each open row dated before today: a daily task is missed. A one-off rolls to today.
  * Any other task rolls too, unless the same task already has a row today or tomorrow,
  * which makes this one missed. Newest first, so only the latest of several carries forward.
+ * A task in NO_ROLL_TASKS_ never rolls: it's missed where it is, and the managers get an email.
  */
 function nightlyRoll_() {
   var info = nowInfo_();
@@ -250,7 +251,7 @@ function nightlyRoll_() {
       }
       var task = tasks[row.taskId];
       var isDaily = task && /^daily$/i.test(task.cadence);
-      if (!task || !task.active || isDaily || hasRow[row.taskId]) {
+      if (!task || !task.active || isDaily || staysPut_(row) || hasRow[row.taskId]) {
         missed.push(row);
         return;
       }
@@ -261,6 +262,12 @@ function nightlyRoll_() {
     missed.forEach(function (row) {
       updateRow_(TABS_.SCHEDULE, row._row, { Status: 'missed' });
     });
+    var notDone = missed.filter(staysPut_);
+    if (notDone.length) {
+      bestEffort_('not done alert', function () {
+        return mailManagerNotDone_(notDone);
+      });
+    }
     rollRows_(rolling, rollTo, info);
     rewriteShiftsFor_(
       before
@@ -273,6 +280,10 @@ function nightlyRoll_() {
   }
 
   flagMissingClockOuts_(info);
+}
+
+function staysPut_(row) {
+  return NO_ROLL_TASKS_.indexOf(row.taskId) >= 0;
 }
 
 /** Same person if they can work that day, else schedFillOpen. Every rolled row becomes source carry and keeps Rolled From. */

@@ -23,6 +23,7 @@ var TABS_ = {
   LOG: 'Log',
   SETTINGS: 'Settings',
   CLOSED: 'Closed Days',
+  EXTRA: 'Extra Work',
 };
 
 /** Every tab but Monthly Hours, which is laid out by hand in Seed.js. A run's one batched read (readBatch_ in Util.js) asks for each of these. */
@@ -38,6 +39,7 @@ var HEADERS_ = {
   Log: ['Time', 'Who', 'Action', 'Details'],
   Settings: ['Key', 'Value', 'Notes'],
   'Closed Days': ['Date', 'Note'],
+  'Extra Work': ['ID', 'Date', 'Name', 'Work', 'Added At'],
 };
 
 var TEXT_FORMAT_ = '@'; // plain text, so Sheets leaves '2026-11-09' and '09:00' alone
@@ -63,6 +65,7 @@ var COLUMN_FORMATS_ = {
   Log: { Time: STAMP_FORMAT_, Action: TEXT_FORMAT_, Details: TEXT_FORMAT_ },
   Settings: { Value: TEXT_FORMAT_ },
   'Closed Days': { Date: TEXT_FORMAT_, Note: TEXT_FORMAT_ },
+  'Extra Work': { ID: TEXT_FORMAT_, Date: TEXT_FORMAT_, Work: TEXT_FORMAT_, 'Added At': STAMP_FORMAT_ },
 };
 
 /** Columns read back as 'YYYY-MM-DD', whatever Sheets turned them into. A number in one of these reads back as a date too. */
@@ -74,6 +77,7 @@ var DATE_COLUMNS_ = {
   Shifts: ['Week Of', 'Date'],
   Hours: ['Date'],
   'Closed Days': ['Date'],
+  'Extra Work': ['Date'],
 };
 
 /** Columns read back as 'HH:MM'. */
@@ -94,10 +98,12 @@ var COLUMN_WIDTHS_ = {
   Log: { Time: 150, Who: 110, Action: 130, Details: 520 },
   Settings: { Key: 160, Value: 300, Notes: 480 },
   'Closed Days': { Date: 90, Note: 240 },
+  'Extra Work': { ID: 110, Date: 90, Name: 110, Work: 480, 'Added At': 150 },
 };
 
 var SERIAL_ZERO_MS_ = -2209161600000; // 1899-12-30 as UTC, the day Sheets counts its dates from
 var SERIAL_MAX_ = 2958465; // 9999-12-31, as far as a date goes. A bigger number in a date column is just a number
+var NO_ROLL_TASKS_ = ['T15']; // Floors: left undone, it's marked missed and the managers hear about it, and it never moves to anyone else
 var FLEX_DAYS_MAX_ = 366; // anything bigger in the Flex Days column is a date someone typed, not a real number of days
 
 var DAY_KEYS_ = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -117,6 +123,7 @@ var MAX_NAME_ = 80;
 var MAX_CODE_ = 64;
 
 var DEADLINE_TIME_ = '07:00'; // Friday at this time closes next week's availability
+var HEADS_UP_TIME_ = '13:45'; // Thursday at this time, the reminder to anyone missing availability
 var NIGHTLY_TIME_ = '00:30';
 var MONTHLY_TIME_ = '07:00';
 
@@ -140,6 +147,7 @@ var PROP_MANAGER_CODE_ = 'MANAGER_CODE';
 var PROP_BUILT_PREFIX_ = 'BUILT_'; // BUILT_2026-11-09 holds when that week was built, which is what "published" means
 var PROP_WEEK_PREFIX_ = 'RUN_WEEK_'; // RUN_WEEK_2026-11-09_DONE and its step markers
 var PROP_THURSDAY_PREFIX_ = 'RUN_THU_';
+var PROP_HOLD_WEEK_ = 'HOLD_WEEK'; // a Monday: that week has no deadline and doesn't build until a manager runs it
 var PROP_NIGHTLY_ = 'RUN_NIGHT'; // the date of the last nightly run
 var PROP_MONTHLY_ = 'RUN_MONTH'; // the month, as 2026-11, whose first-of-the-month email has gone out
 

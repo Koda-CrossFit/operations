@@ -722,21 +722,21 @@ test('check 4: weeks before first_week are skipped, and a tick before setup does
 
 test('check 4: the Thursday heads-up is off by default, and goes only to people missing when turned on', () => {
   const gas = fridayWorld();
-  gas.setNow(at('2026-11-05', '07:00'));
+  gas.setNow(at('2026-11-05', '13:45'));
   gas.tick();
   assert.deepStrictEqual(gas.state.mail, [], 'off by default');
 
   const other = fridayWorld();
   setSetting(other, 'thursday_heads_up', 'TRUE');
   other.state.properties.delete('RUN_THU_' + MON);
-  other.setNow(at('2026-11-05', '06:59'));
+  other.setNow(at('2026-11-05', '13:44'));
   other.tick();
-  assert.deepStrictEqual(other.state.mail, [], 'not before Thursday at 7');
-  other.setNow(at('2026-11-05', '07:00'));
+  assert.deepStrictEqual(other.state.mail, [], 'not before Thursday at 1:45 PM');
+  other.setNow(at('2026-11-05', '13:45'));
   other.tick();
   assert.deepStrictEqual(subjects(other), ['[TEST to Cora] Koda Operations: availability for the week of Nov 9']);
   assert.match(other.state.mail[0].htmlBody, /due tomorrow at 7 AM/);
-  other.setNow(at('2026-11-05', '07:05'));
+  other.setNow(at('2026-11-05', '13:50'));
   other.tick();
   assert.strictEqual(other.state.mail.length, 1, 'once');
 });
@@ -1856,11 +1856,165 @@ test('staff replies never carry minutes, and managers still get them', () => {
   tasks.forEach((task) => assert.strictEqual(typeof task.minutes, 'number', task.title));
 });
 
+test('nightly: unfinished Floors stays where it is, nobody else gets it, and the managers hear once', () => {
+  const gas = built();
+  const id = `set|T15|${WED}|Ivy`;
+  const before = rowById(gas, id);
+  gas.setNow(at(THU, '00:35'));
+  gas.state.mail.length = 0;
+  assert.deepStrictEqual(gas.tick().failed, []);
+  const after = rowById(gas, id);
+  assert.deepStrictEqual([after.Status, after.Name, after.Date, after.Source, after['Rolled From']], ['missed', 'Ivy', WED, before.Source, '']);
+  const alerts = gas.state.mail.filter((mail) => /Not done:/.test(mail.subject));
+  assert.strictEqual(alerts.length, 1);
+  assert.match(alerts[0].subject, /Floors/);
+  assert.match(alerts[0].htmlBody, /Ivy/);
+  assert.match(alerts[0].htmlBody, /given to anyone else/);
+  const board = ok(gas.get({ action: 'mgrBoard', code: CODE, weekOf: MON }));
+  const shown = board.days.find((day) => day.date === WED).groups.find((group) => group.name === 'Ivy').tasks.find((task) => task.id === id);
+  assert.strictEqual(shown.status, 'missed', 'Manage shows it as missed');
+
+  gas.setNow(at(FRI, '00:35'));
+  gas.state.mail.length = 0;
+  gas.tick();
+  assert.deepStrictEqual(rowById(gas, id).Status, 'missed');
+  assert.ok(!gas.state.mail.some((mail) => /Not done/.test(mail.subject)), 'one email is enough');
+  assert.strictEqual(scheduleRows(gas).filter((row) => row['Task ID'] === 'T15' && row.Date === FRI).length, 0, 'it did not move');
+});
+
+test('nightly: Floors that got checked off makes no alert, and other set work still rolls', () => {
+  const gas = built();
+  gas.setNow(at(WED, '10:00'));
+  ok(gas.post({ action: 'taskToggle', name: 'Ivy', id: `set|T15|${WED}|Ivy`, done: true }));
+  gas.setNow(at(THU, '00:35'));
+  gas.state.mail.length = 0;
+  gas.tick();
+  assert.strictEqual(rowById(gas, `set|T15|${WED}|Ivy`).Status, 'done');
+  assert.ok(!gas.state.mail.some((mail) => /Not done/.test(mail.subject)));
+});
+
+test('a week on hold: no run at the deadline, nobody late, and it builds when a manager runs it', () => {
+  const gas = fridayWorld();
+  ok(gas.post({ action: 'mgrHoldWeek', code: CODE, weekOf: MON }));
+  gas.state.mail.length = 0;
+  gas.setNow(at(LAST_FRI, '07:00'));
+  assert.ok(!gas.tick().ran.includes('weekly'));
+  gas.setNow(at(LAST_FRI, '09:00'));
+  gas.tick();
+  assert.deepStrictEqual(gas.state.mail, [], 'nothing went out');
+  assert.deepStrictEqual(scheduleRows(gas), []);
+
+  const board = ok(gas.get({ action: 'mgrBoard', code: CODE, weekOf: MON }));
+  assert.deepStrictEqual([board.held, board.published, board.nextWeek.deadline], [true, false, 'as soon as you can']);
+  assert.deepStrictEqual(board.nextWeek.missing, ['Cora']);
+  const week = ok(gas.get({ action: 'boot', name: 'Cora' })).availability.weeks.find((line) => line.weekOf === MON);
+  assert.deepStrictEqual([week.held, week.past, week.deadline], [true, false, 'as soon as you can']);
+  refused(gas.post({ action: 'mgrRebuild', code: CODE, weekOf: MON }), /on hold/);
+
+  const saved = ok(save(gas, 'Cora', MON, 6, slotsFor(['Tue', 'Thu'], 9, 13)));
+  assert.strictEqual(saved.late, false, 'after 7 AM, and still on time');
+  assert.strictEqual(gas.rows('Availability').find((row) => row.Name === 'Cora').Late, false);
+
+  const run = ok(gas.post({ action: 'mgrRunHeldWeek', code: CODE, by: 'Max' }));
+  assert.strictEqual(run.weekOf, MON);
+  assert.ok(run.rows > 0);
+  assert.ok(gas.state.mail.some((mail) => /schedule is out/.test(mail.subject)), 'the managers hear');
+  assert.strictEqual(gas.state.properties.has('HOLD_WEEK'), false);
+  const after = ok(gas.get({ action: 'mgrBoard', code: CODE, weekOf: MON }));
+  assert.deepStrictEqual([after.published, 'held' in after], [true, false]);
+  const count = gas.state.mail.length;
+  gas.setNow(at(LAST_FRI, '09:10'));
+  gas.tick();
+  assert.strictEqual(gas.state.mail.length, count, 'the automatic run does not repeat it');
+  refused(gas.post({ action: 'mgrRunHeldWeek', code: CODE }), /No week is on hold/);
+  refused(gas.post({ action: 'mgrHoldWeek', code: CODE, weekOf: MON }), /already been built/);
+});
+
+test('a week on hold: anyone still missing when it runs is not told it was due at 7 AM', () => {
+  const gas = fridayWorld();
+  ok(gas.post({ action: 'mgrHoldWeek', code: CODE, weekOf: MON }));
+  gas.setNow(at(LAST_FRI, '12:00'));
+  gas.state.mail.length = 0;
+  ok(gas.post({ action: 'mgrRunHeldWeek', code: CODE }));
+  const missed = gas.state.mail.find((mail) => /availability for the week/.test(mail.subject));
+  assert.ok(missed);
+  assert.doesNotMatch(missed.htmlBody, /7 AM/);
+  assert.match(missed.htmlBody, /the schedule just went out/);
+});
+
+test('a week on hold: staff can still reach it once it starts, managers chase it, and limits hold', () => {
+  const gas = fridayWorld();
+  ok(gas.post({ action: 'mgrHoldWeek', code: CODE, weekOf: MON }));
+  refused(gas.post({ action: 'mgrHoldWeek', code: CODE, weekOf: NEXT_MON }), /still on hold/);
+  gas.setNow(at(MON, '10:00'));
+  gas.tick();
+  const weeks = ok(gas.get({ action: 'boot', name: 'Cora' })).availability.weeks;
+  assert.strictEqual(weeks[0].weekOf, MON);
+  assert.strictEqual(weeks[0].held, true);
+  const board = ok(gas.get({ action: 'mgrBoard', code: CODE, weekOf: MON }));
+  assert.strictEqual(board.nextWeek.weekOf, MON);
+  assert.deepStrictEqual(board.nextWeek.missing, ['Cora']);
+
+  gas.setNow(at(NEXT_MON, '10:00'));
+  gas.state.mail.length = 0;
+  refused(gas.post({ action: 'mgrRunHeldWeek', code: CODE }), /already over/);
+  assert.deepStrictEqual(gas.state.mail, [], 'nothing went out');
+  assert.strictEqual(gas.state.properties.has('HOLD_WEEK'), false);
+});
+
+test('a week on hold: the Thursday reminder does not tell anyone the old deadline', () => {
+  const gas = fridayWorld();
+  setSetting(gas, 'thursday_heads_up', 'TRUE');
+  gas.state.properties.delete('RUN_THU_' + MON);
+  ok(gas.post({ action: 'mgrHoldWeek', code: CODE, weekOf: MON }));
+  gas.state.mail.length = 0;
+  gas.setNow(at('2026-11-05', '13:45'));
+  gas.tick();
+  assert.deepStrictEqual(gas.state.mail, []);
+});
+
+test('extra work written before the first week can still be found on Manage', () => {
+  const gas = world();
+  gas.setNow(at('2026-11-05', '11:30'));
+  ok(gas.post({ action: 'extraAdd', name: 'Ana', text: 'Early bird' }));
+  const board = ok(gas.get({ action: 'mgrBoard', code: CODE, weekOf: '2026-11-02' }));
+  assert.ok(board.weeks.some((week) => week.weekOf === '2026-11-02'));
+  assert.ok(board.days.some((day) => day.extras.some((item) => item.text === 'Early bird')));
+});
+
+test('extra work: staff write it in for today, can take it back, and managers see it under that day', () => {
+  const gas = built();
+  gas.setNow(at(MON, '09:05'));
+  refused(gas.post({ action: 'extraAdd', name: 'Ana', text: '   ' }), /what you did/);
+  const nasty = '=SUM(1,2) fixed "the" door @front';
+  const first = ok(gas.post({ action: 'extraAdd', name: 'Ana', text: nasty }));
+  assert.deepStrictEqual(first.extras.map((item) => item.text), [nasty]);
+  ok(gas.post({ action: 'extraAdd', name: 'Ana', text: nasty }));
+  assert.strictEqual(gas.rows('Extra Work').length, 1, 'a retry does not double it');
+  ok(gas.post({ action: 'extraAdd', name: 'Ben', text: 'Swept the lot' }));
+
+  const boot = ok(gas.get({ action: 'boot', name: 'Ana' }));
+  assert.deepStrictEqual(boot.today.extras.map((item) => item.text), [nasty], 'only their own');
+  const monday = ok(gas.get({ action: 'mgrBoard', code: CODE, weekOf: MON })).days.find((day) => day.date === MON);
+  assert.deepStrictEqual(monday.extras.map((item) => [item.name, item.text]), [['Ana', nasty], ['Ben', 'Swept the lot']]);
+  assert.strictEqual(typeof monday.extras[0].at, 'string');
+
+  const id = first.extras[0].id;
+  ok(gas.post({ action: 'extraRemove', name: 'Ben', id }));
+  assert.strictEqual(gas.rows('Extra Work').length, 2, "someone else's stays");
+  assert.deepStrictEqual(ok(gas.post({ action: 'extraRemove', name: 'Ana', id })).extras, []);
+  assert.deepStrictEqual(gas.rows('Extra Work').map((row) => row.Name), ['Ben']);
+
+  gas.setNow(at(TUE, '09:05'));
+  assert.deepStrictEqual(ok(gas.get({ action: 'boot', name: 'Ben' })).today.extras, [], 'each day starts empty');
+  assert.ok(gas.rows('Log').some((row) => row.Action === 'extra work'));
+});
+
 test('nightly roll: a one-off left over at the end of a week moves into the next one', () => {
   const gas = built();
   gas.setNow(at(SAT, '09:00'));
   const added = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Over the weekend', minutes: 15, weekOf: MON, day: 'Sat', who: ['Cora'] }));
-  ok(save(gas, 'Cora', NEXT_MON, 20, slotsFor(['Mon'], 5, 21)));
+  ok(save(gas, 'Cora', NEXT_MON, 20, slotsFor(['Mon'], 8, 16)));
   gas.setNow(at('2026-11-13', '07:00')); // the next Friday run had already happened by Saturday
   gas.call('runWeekBuild_', NEXT_MON);
   gas.setNow(at(SUN, '00:35')); // nothing on Sunday for her, so it waits there uncovered
@@ -2004,7 +2158,7 @@ test('mgrBoard: has the documented shape and the right numbers', () => {
   assert.strictEqual(board.days.length, 7);
 
   const monday = board.days[0];
-  deepKeys(monday, ['date', 'label', 'closed', 'groups', 'uncovered'], 'board day');
+  deepKeys(monday, ['date', 'label', 'closed', 'groups', 'uncovered', 'extras'], 'board day');
   assert.strictEqual(monday.label, 'Mon, Nov 9');
   assert.deepStrictEqual(monday.groups.map((group) => group.name), ['Ana']);
   deepKeys(monday.groups[0], ['name', 'shift', 'tasks'], 'board group');
@@ -2098,7 +2252,7 @@ function checkBootShape(boot) {
   deepKeys(boot, ['ok', 'now', 'me', 'today', 'clock', 'week', 'availability', 'timeOff', 'hours'], 'boot');
   deepKeys(boot.now, ['iso', 'date', 'day', 'label', 'hour', 'minute'], 'now');
   deepKeys(boot.me, ['name', 'type', 'setDays', 'manager'], 'me');
-  deepKeys(boot.today, ['date', 'closed', 'shift', 'tasks', 'openTasks', 'next'], 'today');
+  deepKeys(boot.today, ['date', 'closed', 'shift', 'tasks', 'openTasks', 'next', 'extras'], 'today');
   if (boot.today.shift) deepKeys(boot.today.shift, SHIFT_KEYS, 'shift');
   if (boot.today.next) deepKeys(boot.today.next, ['date', 'label', 'start', 'count'], 'next');
   boot.today.tasks.concat(boot.today.openTasks).forEach((task) => deepKeys(task, TASK_KEYS, 'task'));
@@ -2209,7 +2363,7 @@ test('availability weeks: a Saturday sees the coming week as past due, and Monda
 test('setup: lays out every tab, with frozen bold headers and the seed data', () => {
   const gas = world();
   const book = gas.book();
-  const expected = ['Staff', 'Tasks', 'One-Offs', 'Availability', 'Time Off', 'Schedule', 'Shifts', 'Hours', 'Monthly Hours', 'Log', 'Settings', 'Closed Days'];
+  const expected = ['Staff', 'Tasks', 'One-Offs', 'Availability', 'Time Off', 'Schedule', 'Shifts', 'Hours', 'Monthly Hours', 'Log', 'Settings', 'Closed Days', 'Extra Work'];
   assert.deepStrictEqual(book.getSheets().map((sheet) => sheet.getName()).sort(), expected.slice().sort());
   assert.strictEqual(book.getSheetByName('Sheet1'), null, 'the blank first tab is gone');
   assert.strictEqual(book.getSpreadsheetTimeZone(), 'America/Denver');

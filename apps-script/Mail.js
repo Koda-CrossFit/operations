@@ -177,7 +177,8 @@ function mailMissedDeadline_(person, weekOf) {
         firstName_(person.name) +
         ", we don't have your availability for the week of " +
         monthDay_(weekOf) +
-        " yet. It was due this morning at 7 AM and the schedule just went out. Fill it out now and you'll pick up any tasks that are left."
+        (isHeld_(weekOf) ? ' yet, and the schedule just went out.' : ' yet. It was due this morning at 7 AM and the schedule just went out.') +
+        " Fill it out now and you'll pick up any tasks that are left."
     ),
     { label: 'Fill out availability', url: siteLink_(person.name, 'availability', weekOf) }
   );
@@ -297,6 +298,17 @@ function mailManagerSummary_(weekOf) {
   var unreadable = unreadableClosedDays_();
   if (unreadable.length) body += para_('These lines on the Closed Days tab are not dates we can read, so work was scheduled as usual: ' + unreadable.join(', ') + '. Please type them like 12/25/2026.');
   return sendToManagers_('Week of ' + monthDay_(weekOf) + ' schedule is out', mailPage_(body, { label: 'Open ' + APP_NAME_, url: siteLink_('', 'manage') }));
+}
+
+/** Work that stays put when it isn't done, like Floors. Nobody else gets it, so the managers have to hear about it. */
+function mailManagerNotDone_(rows) {
+  var body = para_("This wasn't checked off. It hasn't been given to anyone else. It shows as Missed on Manage, under the week of " + monthDay_(mondayOf_(rows[0].date)) + '.');
+  body += list_(
+    rows.map(function (row) {
+      return rowLine_(row) + (row.name ? ' (' + row.name + ')' : ' (nobody had it)');
+    })
+  );
+  return sendToManagers_('Not done: ' + rows.map(rowLine_).join('; '), mailPage_(body, { label: 'Open ' + APP_NAME_, url: siteLink_('', 'manage') }));
 }
 
 /** Someone is out of town, and what got covered or not. */

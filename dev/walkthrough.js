@@ -385,6 +385,19 @@ const SCENES = {
     await sleep(250);
     check((await boot('Ana')).today.tasks[0].note.includes('Rower 4'), 'saving a note without touching it keeps it');
 
+    // Extra work.
+    check(await page.hasText('Anything else you did today?'), 'the extra work box shows');
+    await page.eval(`document.querySelector('[data-form=extra]').scrollIntoView()`);
+    await page.click('[data-form=extra]');
+    await page.type('[data-form=extra]', 'Fixed the loose rower chain');
+    await page.click('#extras button[type=submit]');
+    await page.waitText('Added.');
+    check((await boot('Ana')).today.extras.some((item) => item.text.includes('rower chain')), 'extra work reached the server');
+    await page.shot('phone-today-extra-work');
+    await page.click('[data-act=extra-remove]');
+    await page.gone('Fixed the loose rower chain');
+    check((await boot('Ana')).today.extras.length === 0, 'removing it reached the server');
+
     // Open tasks.
     check(await page.hasText('1 open task today'), 'open tasks row shows');
     await page.click('.open-toggle');

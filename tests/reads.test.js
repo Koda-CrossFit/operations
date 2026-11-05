@@ -27,7 +27,7 @@ const SUN = '2026-11-15';
 const NEXT_MON = '2026-11-16';
 
 const DATA_TABS = ['Staff', 'Tasks', 'One-Offs', 'Availability', 'Time Off', 'Schedule', 'Shifts', 'Hours', 'Settings', 'Closed Days'];
-const EVERY_RANGE = ["'Staff'", "'Tasks'", "'One-Offs'", "'Availability'", "'Time Off'", "'Schedule'", "'Shifts'", "'Hours'", "'Log'!1:1", "'Settings'", "'Closed Days'"];
+const EVERY_RANGE = ["'Staff'", "'Tasks'", "'One-Offs'", "'Availability'", "'Time Off'", "'Schedule'", "'Shifts'", "'Hours'", "'Log'!1:1", "'Settings'", "'Closed Days'", "'Extra Work'"];
 
 /* ---------------------------------------------------------------------- helpers ---- */
 

@@ -124,7 +124,18 @@ function deadlineStamp_(weekOf) {
 }
 
 function pastDeadline_(weekOf, info) {
-  return info.stamp >= deadlineStamp_(weekOf);
+  return !isHeld_(weekOf) && info.stamp >= deadlineStamp_(weekOf);
+}
+
+/** The week on hold, if any. It has no deadline, and it builds when a manager runs it (apiMgrRunHeldWeek_). */
+function heldWeek_() {
+  var cache = req_();
+  if (cache.held === undefined) cache.held = PropertiesService.getScriptProperties().getProperty(PROP_HOLD_WEEK_) || '';
+  return cache.held;
+}
+
+function isHeld_(weekOf) {
+  return heldWeek_() === weekOf;
 }
 
 /* ------------------------------------------------------------------- labels ---- */
@@ -159,6 +170,7 @@ function weekLabel_(weekOf) {
 
 /** 'Fri, Nov 13 at 7:00 AM' */
 function deadlineLabel_(weekOf) {
+  if (isHeld_(weekOf)) return 'as soon as you can';
   return dayLabel_(addDays_(weekOf, -3)) + ' at ' + clockLabel_(DEADLINE_TIME_);
 }
 
@@ -887,6 +899,18 @@ function availabilityMap_(weekOf) {
     if (row.weekOf === weekOf && flexible[row.name]) map[row.name] = { none: row.none, hoursWanted: row.hoursWanted, slots: row.slots };
   });
   return map;
+}
+
+function extraRows_() {
+  return typed_(TABS_.EXTRA, function (rows) {
+    return rows
+      .map(function (row) {
+        return { id: rowId_(row), date: row['Date'], name: text_(row['Name']), text: text_(row['Work']), addedAt: toDate_(row['Added At']), _row: row._row };
+      })
+      .filter(function (row) {
+        return row.name && row.date && row.text;
+      });
+  });
 }
 
 function timeOffRows_() {
