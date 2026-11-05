@@ -12,7 +12,8 @@ Staff sign in by tapping their name. Managers enter a short code once per device
 4. Anyone who submits after the deadline only gets what's left over. Nobody else's work moves. Someone who was on time stays on time when they change their answer later, unless they offer more than before (new hours, or more hours wanted).
 5. Every night a little after 12:30 AM, unfinished work is sorted out. A daily task counts as missed. A one-off rolls to today, and so does any other task unless the same task already has a row today or tomorrow. Floors never moves: if it isn't checked off, it's marked missed where it is and the managers get an email. A forgotten clock-out gets flagged. A shift can run past midnight: an entry stays on the clock for 12 hours after clocking in, and anything older counts as a forgotten clock-out.
 6. On the 1st of each month at 7:00 AM, the managers get last month's hours.
-7. Staff can write in anything extra they did on the Today tab. It's saved on the `Extra Work` tab, and managers see it under that day on Manage.
+7. On a phone, the Today tab shows how to add the site to the home screen until the person dismisses it or opens it from the icon. Android gets a one-tap prompt when Chrome offers one. Apple gives a page no way to prompt, so an iPhone gets the steps.
+8. Staff can write in anything extra they did on the Today tab. It's saved on the `Extra Work` tab, and managers see it under that day on Manage.
 
 A manager can put one week on hold with the `mgrHoldWeek` request. That week has no deadline, nobody counts as late, and Friday's run waits. `mgrRunHeldWeek` builds it and sends the emails. Run it before that day's work starts, since a run late in the day still hands out that day's set work. A hold only suits a week with no unfinished work before it, like the first week: the nightly would roll old work into the unbuilt week, and the run would then add it again.
 

@@ -1390,6 +1390,43 @@ const SCENES = {
     check(!inputs.length, 'inputs are at least 16px: ' + inputs.join());
   },
 
+  async homescreen(page) {
+    await page.viewport(390, 844, true);
+    const desktop = await page.eval('navigator.userAgent');
+    await page.fresh('/?me=Ana');
+    await page.waitFor('.task');
+    check(!(await page.hasText('Add this to your home screen')), 'a computer does not get the home screen card');
+
+    await page.send('Emulation.setUserAgentOverride', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' });
+    await page.goto('/');
+    await page.waitText('Add this to your home screen');
+    check(await page.hasText('Add to Home Screen'), 'an iPhone gets the steps');
+    check(!(await page.eval(`!!document.querySelector('[data-act=home-add]')`)), 'an iPhone has no prompt button');
+    await page.shot('phone-today-home-card-iphone');
+    await page.noSideScroll('home screen card');
+    await page.click('[data-act=home-dismiss]');
+    await page.gone('Add this to your home screen');
+    await page.goto('/');
+    await page.waitFor('.task');
+    check(!(await page.hasText('Add this to your home screen')), 'dismissed stays dismissed after a reload');
+
+    await page.send('Emulation.setUserAgentOverride', { userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36' });
+    await page.eval(`localStorage.removeItem('koda-ops.v1.homeScreenDone')`);
+    await page.goto('/');
+    await page.waitText('Add this to your home screen');
+    const offered = await page.eval(`!!document.querySelector('[data-act=home-add]')`);
+    console.log('  Android: browser offered a real prompt: ' + offered);
+    check(offered || (await page.hasText('three dots')), 'Android gets the prompt, or the steps if Chrome has not offered one');
+    await page.eval(`(() => { const event = new Event('beforeinstallprompt'); window.__asked = 0; event.prompt = () => { window.__asked += 1; }; event.userChoice = Promise.resolve({ outcome: 'accepted' }); window.dispatchEvent(event); })()`);
+    await page.waitFor('[data-act=home-add]');
+    await page.shot('phone-today-home-card-android');
+    await page.click('[data-act=home-add]');
+    await page.gone('Add this to your home screen');
+    check((await page.eval('window.__asked')) === 1, 'the button brings up the prompt');
+    check((await page.eval(`localStorage.getItem('koda-ops.v1.homeScreenDone')`)) === 'true', 'once added, the card stays gone');
+    await page.send('Emulation.setUserAgentOverride', { userAgent: desktop });
+  },
+
   async offline(page) {
     await page.viewport(390, 844, true);
     await page.fresh('/?me=Ana');

@@ -373,6 +373,13 @@ svg{display:block;flex:none}
 .grid-count{font-size:16px;font-weight:600;color:var(--ink)}
 .grid-note{margin-top:2px;font-size:15px;color:var(--muted)}
 .off-note{margin-top:8px;font-size:15px;color:var(--muted)}
+.home-card{padding:14px 12px 18px 20px}
+.home-card p{margin:2px 8px 0 0}
+.home-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.home-share{display:inline-block;vertical-align:-4px}
+.home-share svg{width:20px;height:20px}
+.home-help{margin-top:8px!important}
+.home-card .form-btn{margin-top:12px;width:calc(100% - 8px)}
 #extras{padding:18px 20px 20px}
 .extras{list-style:none;margin:12px 0 0;padding:0}
 .extra-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
@@ -907,6 +914,7 @@ const I = {
   plus: icon('<path d="M12 5.5v13M5.5 12h13"/>'),
   minus: icon('<path d="M5.5 12h13"/>'),
   close: icon('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>'),
+  share: icon('<path d="M12 15V4M8 7.5l4-4 4 4"/><path d="M7.5 10.5H6A1.5 1.5 0 0 0 4.5 12v7A1.5 1.5 0 0 0 6 20.5h12a1.5 1.5 0 0 0 1.5-1.5v-7a1.5 1.5 0 0 0-1.5-1.5h-1.5"/>'),
   check: new Safe('<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'),
   note: icon('<path d="M20.5 14.5a2 2 0 0 1-2 2H8l-4.5 4V5.5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/>'),
   badgeCheck: icon('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
@@ -917,6 +925,27 @@ const KX = new Safe('<svg viewBox="0 0 1862 1078" aria-hidden="true"><path d="M0
 /* ==================================================================== talking to it ===== */
 
 class NetworkError extends Error {}
+
+/* Add to home screen. Apple gives a page no way to prompt, so an iPhone gets the steps. Android may hand over a real prompt, and gets the steps if not. */
+let installEvent = null;
+window.addEventListener('beforeinstallprompt', (event) => {
+  event.preventDefault();
+  installEvent = event;
+  render();
+});
+window.addEventListener('appinstalled', () => {
+  store.set('homeScreenDone', true);
+  installEvent = null;
+  render();
+});
+function phoneKind() {
+  const agent = navigator.userAgent;
+  if (/iPhone|iPod|iPad/.test(agent) || (/Macintosh/.test(agent) && navigator.maxTouchPoints > 1)) return 'ios';
+  return /Android/.test(agent) ? 'android' : '';
+}
+function onHomeScreen() {
+  return navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+}
 
 async function send(url, options, timeoutMs) {
   const controller = new AbortController();
@@ -1937,6 +1966,7 @@ function viewToday() {
     </div>
     ${viewStaleCard(view)}
     ${viewClockCard(view, { small: !tasks.length })}
+    ${viewHomeCard()}
     ${tasks.length
       ? html`
         <section class="sec" aria-label="Today's tasks">
@@ -1962,6 +1992,32 @@ function viewToday() {
       : viewNothingToday(view)}
     ${viewOpenTasks(view)}
     ${viewExtras(view)}`;
+}
+function viewHomeCard() {
+  const kind = phoneKind();
+  if (!kind || onHomeScreen() || store.get('homeScreenDone')) return '';
+  let body;
+  if (kind === 'android' && installEvent) {
+    body = html`
+      <p class="muted">Then it opens like an app.</p>
+      <button type="button" class="btn btn-primary form-btn" data-act="home-add">Add to home screen</button>`;
+  } else if (kind === 'ios') {
+    body = html`
+      <p>Tap the Share button <span class="home-share">${I.share}</span>, then <b>Add to Home Screen</b>, then <b>Add</b>.</p>
+      <p class="muted small home-help">Don't see it? Open this page in Safari first.</p>`;
+  } else {
+    body = html`
+      <p>Tap the three dots at the top right, then <b>Add to Home screen</b> or <b>Install app</b>.</p>
+      <p class="muted small home-help">Don't see it? Open this page in Chrome first.</p>`;
+  }
+  return html`
+    <section class="card sec home-card" id="home-card" data-key="home-card" aria-label="Add to your home screen">
+      <div class="home-head">
+        <h2 class="h3">Add this to your home screen</h2>
+        <button type="button" class="icon-btn" data-act="home-dismiss" aria-label="Dismiss">${I.close}</button>
+      </div>
+      ${body}
+    </section>`;
 }
 function viewExtras(view) {
   const state = form('extra');
@@ -3422,6 +3478,19 @@ const A = {
     } catch (err) {
       S.errors.extra = OFFLINE_MESSAGE;
     }
+    render();
+  },
+  async 'home-add'() {
+    const event = installEvent;
+    if (!event) return;
+    installEvent = null;
+    event.prompt();
+    const choice = await event.userChoice;
+    if (choice && choice.outcome === 'accepted') store.set('homeScreenDone', true);
+    render();
+  },
+  'home-dismiss'() {
+    store.set('homeScreenDone', true);
     render();
   },
   'add-hours'() {
