@@ -89,7 +89,7 @@ test('seed tasks: priority, minutes, days and flex for every task, as in section
   const week = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const expected = [
     ['T08', 'A+++++', 60, [], 1],
-    ['T15', 'A', 360, [], 1],
+    ['T15', 'A', 300, [], 1],
     ['T14', 'B', 90, [], 6],
     ['T01', 'B', 15, week, 0],
     ['T05', 'B', 10, week, 0],

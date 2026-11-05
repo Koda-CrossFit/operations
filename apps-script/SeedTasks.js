@@ -25,7 +25,7 @@ var SEED_TASKS_ = [
     details: 'Floor scrubber and equipment',
     cadence: '2x per week',
     priority: 'A',
-    minutes: 360,
+    minutes: 300,
     days: [],
     setOnly: true,
     flexDays: 1,

@@ -40,6 +40,7 @@ Edit the sheet. There's nothing to redeploy for any of this.
 
 - `Priority`: A, B or C. Plusses rank higher, so `A++` comes before `A`.
 - `Days`: `Mon, Wed, Fri`, or the word `Set` for a task only set staff do unless they're covering.
+- `Minutes`: about how long it takes. Matching, shift times and the managers' screens use it. Staff don't see it, and pay comes from clock-in and clock-out times, never from this.
 - `Flex Days`: how many days a task can move from its listed day if nobody can do it then. 0 means that day or not at all.
 
 **A person:** change their row in `Staff`. Set `Active` to FALSE when someone leaves, which keeps their history.

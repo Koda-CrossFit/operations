@@ -1439,7 +1439,7 @@ test('taskClaim: only an uncovered row dated today, and nobody can take it twice
   assert.deepStrictEqual(boot.today.tasks, []);
 
   const claimed = ok(gas.post({ action: 'taskClaim', name: 'Cora', id }));
-  deepKeys(claimed.task, ['id', 'title', 'details', 'minutes', 'priority', 'top', 'done', 'doneAt', 'note', 'date', 'kind', 'rolled'], 'task');
+  deepKeys(claimed.task, ['id', 'title', 'details', 'priority', 'top', 'done', 'doneAt', 'note', 'date', 'kind', 'rolled'], 'task');
   assert.strictEqual(claimed.task.id, id);
   const row = rowById(gas, id);
   assert.deepStrictEqual([row.Name, row.Source], ['Cora', 'manual']);
@@ -1842,11 +1842,25 @@ test('nightly roll: a one-off pinned to a day that passed stays open and keeps g
   assert.deepStrictEqual([rowById(gas, id).Date, rowById(gas, id).Status], [THU, 'done']);
 });
 
+test('staff replies never carry minutes, and managers still get them', () => {
+  const gas = built();
+  gas.setNow(at(MON, '09:05'));
+  const hasMinutes = (value) => JSON.stringify(value).includes('"minutes"');
+  ['Ana', 'Gus', 'Max'].forEach((name) => assert.ok(!hasMinutes(ok(gas.get({ action: 'boot', name }))), name + ' boot'));
+  ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Up for grabs', minutes: 15, weekOf: MON, day: 'Mon', who: ['Dev'] }));
+  const open = ok(gas.get({ action: 'boot', name: 'Dev' })).today.openTasks;
+  open.forEach((task) => assert.ok(!('minutes' in task), 'an open task'));
+  const board = ok(gas.get({ action: 'mgrBoard', code: CODE, weekOf: MON }));
+  const tasks = board.days.flatMap((day) => day.groups.flatMap((group) => group.tasks).concat(day.uncovered));
+  assert.ok(tasks.length > 0);
+  tasks.forEach((task) => assert.strictEqual(typeof task.minutes, 'number', task.title));
+});
+
 test('nightly roll: a one-off left over at the end of a week moves into the next one', () => {
   const gas = built();
   gas.setNow(at(SAT, '09:00'));
   const added = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Over the weekend', minutes: 15, weekOf: MON, day: 'Sat', who: ['Cora'] }));
-  ok(save(gas, 'Cora', NEXT_MON, 20, slotsFor(['Mon'], 8, 16)));
+  ok(save(gas, 'Cora', NEXT_MON, 20, slotsFor(['Mon'], 5, 21)));
   gas.setNow(at('2026-11-13', '07:00')); // the next Friday run had already happened by Saturday
   gas.call('runWeekBuild_', NEXT_MON);
   gas.setNow(at(SUN, '00:35')); // nothing on Sunday for her, so it waits there uncovered
@@ -1994,7 +2008,7 @@ test('mgrBoard: has the documented shape and the right numbers', () => {
   assert.strictEqual(monday.label, 'Mon, Nov 9');
   assert.deepStrictEqual(monday.groups.map((group) => group.name), ['Ana']);
   deepKeys(monday.groups[0], ['name', 'shift', 'tasks'], 'board group');
-  assert.deepStrictEqual(monday.groups[0].shift, { start: '9:00 AM', end: '11:30 AM', minutes: 150 });
+  assert.deepStrictEqual(monday.groups[0].shift, { start: '9:00 AM', end: '11:30 AM' });
   const doneTask = monday.groups[0].tasks.find((task) => task.id === `task|T01|${MON}`);
   assert.strictEqual(doneTask.doneBy, 'Ana');
   assert.strictEqual(doneTask.done, true);
@@ -2062,9 +2076,9 @@ test('mgrHours: per person totals, issues, months, and it matches the sheet\'s r
 
 /* ------------------------------------------------------------------- boot shape ---- */
 
-const TASK_KEYS = ['id', 'title', 'details', 'minutes', 'priority', 'top', 'done', 'doneAt', 'note', 'date', 'kind', 'rolled'];
+const TASK_KEYS = ['id', 'title', 'details', 'priority', 'top', 'done', 'doneAt', 'note', 'date', 'kind', 'rolled'];
 const ENTRY_KEYS = ['id', 'date', 'dayLabel', 'in', 'out', 'hours', 'flag', 'note'];
-const SHIFT_KEYS = ['start', 'end', 'minutes'];
+const SHIFT_KEYS = ['start', 'end'];
 
 function checkWeek(week, label) {
   deepKeys(week, ['weekOf', 'label', 'published', 'days'], label);
@@ -2117,7 +2131,7 @@ test('boot shape matches section 8 exactly, with values in the documented forms'
   assert.deepStrictEqual(boot.me, { name: 'Ana', type: 'Flexible', setDays: [], manager: false });
   assert.strictEqual(boot.today.date, MON);
   assert.strictEqual(boot.today.closed, '');
-  assert.deepStrictEqual(boot.today.shift, { start: '9:00 AM', end: '11:15 AM', minutes: 135 });
+  assert.deepStrictEqual(boot.today.shift, { start: '9:00 AM', end: '11:15 AM' });
   assert.deepStrictEqual(boot.today.next, { date: WED, label: 'Wed, Nov 11', start: '9:00 AM', count: 7 });
 
   const task = boot.today.tasks.find((candidate) => candidate.id === `task|T05|${MON}`);
@@ -2125,7 +2139,6 @@ test('boot shape matches section 8 exactly, with values in the documented forms'
     id: `task|T05|${MON}`,
     title: 'Unload dishwasher and load dirty dishes',
     details: 'Switch the sign to clean or dirty',
-    minutes: 10,
     priority: 'B',
     top: false,
     done: true,
@@ -3055,7 +3068,7 @@ test('partial one-offs: the worker is told, the list shows what is on the schedu
   const shiftBefore = gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === row.Date).End;
   const task = ok(gas.get({ action: 'boot', name: 'Ana' })).today.tasks.find((one) => one.id === id);
   assert.strictEqual(task.partial, true);
-  assert.strictEqual(task.minutes, row.Minutes);
+  assert.ok(!('minutes' in task), 'a partial task keeps its minutes off the staff screen too');
   const whole = ok(gas.get({ action: 'boot', name: 'Ana' })).today.tasks.find((one) => one.id !== id);
   assert.ok(!('partial' in whole), 'an ordinary task keeps its shape');
 

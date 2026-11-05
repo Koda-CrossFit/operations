@@ -244,8 +244,8 @@ svg{display:block;flex:none}
 .check[aria-checked=true] .circle svg{opacity:1;transform:none}
 .task-main{display:block;width:100%;min-width:0;padding:16px 16px 16px 0;text-align:left;border-radius:0 var(--radius) var(--radius) 0}
 .task-main:focus-visible{outline-offset:-3px}
-.task-title{display:block;font-size:17px;line-height:1.3;font-weight:600;color:var(--ink);transition:color .15s}
-.task-details{display:block;margin-top:3px;font-size:16px;line-height:1.4;color:var(--muted)}
+.task-title{display:block;padding-right:26px;font-size:17px;line-height:1.3;font-weight:600;color:var(--ink);transition:color .15s}
+.task-details{padding-right:26px;display:block;margin-top:3px;font-size:16px;line-height:1.4;color:var(--muted)}
 .task-meta{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:6px;padding-right:26px;font-size:14px;line-height:1.4;color:var(--muted)}
 .task-note{display:flex;gap:6px;margin-top:8px;font-size:15px;line-height:1.4;color:var(--text);white-space:pre-wrap}
 .task-note-mark{position:absolute;right:0;bottom:1px;color:#8D99A6}
@@ -1819,6 +1819,8 @@ function viewTaskRow(task) {
   const open = S.noteOpen === task.id;
   const notes = form('note');
   const draft = notes[task.id] !== undefined ? notes[task.id] : task.note || '';
+  const noteMark = !task.note && !open;
+  const hasMeta = (task.top && !task.done) || (task.done && task.doneAt) || task.rolled || noteMark;
   return html`
     <li class="task${task.done ? ' done' : ''}" data-key="task:${task.id}">
       <button type="button" class="check" role="checkbox" aria-checked="${task.done ? 'true' : 'false'}" aria-label="${task.title}" data-act="toggle" data-id="${task.id}">
@@ -1827,12 +1829,15 @@ function viewTaskRow(task) {
       <button type="button" class="task-main" aria-expanded="${open ? 'true' : 'false'}" data-act="note-open" data-id="${task.id}">
         <span class="task-title">${task.title}</span>
         ${task.details ? html`<span class="task-details">${task.details}</span>` : ''}
-        <span class="task-meta">
-          ${task.top && !task.done ? html`<span class="chip">Top priority</span>` : ''}
-          <span>${task.done && task.doneAt ? 'Done ' + task.doneAt : 'About ' + minutesText(task.minutes)}</span>
-          ${task.rolled ? html`<span>Carried over</span>` : ''}
-          ${task.note || open ? '' : html`<span class="task-note-mark">${I.note}</span>`}
-        </span>
+        ${hasMeta
+          ? html`
+            <span class="task-meta">
+              ${task.top && !task.done ? html`<span class="chip">Top priority</span>` : ''}
+              ${task.done && task.doneAt ? html`<span>Done ${task.doneAt}</span>` : ''}
+              ${task.rolled ? html`<span>Carried over</span>` : ''}
+              ${noteMark ? html`<span class="task-note-mark">${I.note}</span>` : ''}
+            </span>`
+          : ''}
         ${task.partial && !task.done ? html`<span class="task-details">Part of a bigger job. Leave it unchecked until the whole job is done.</span>` : ''}
         ${task.note && !open ? html`<span class="task-note">${I.note}<span>${task.note}</span></span>` : ''}
       </button>
@@ -1892,7 +1897,6 @@ function viewOpenTasks(view) {
                 <div class="open-row-text">
                   <div class="h3">${task.title}</div>
                   ${task.details ? html`<div class="muted" style="font-size:15px">${task.details}</div>` : ''}
-                  <div class="muted small">About ${minutesText(task.minutes)}</div>
                 </div>
                 <button type="button" class="btn btn-soft btn-sm" data-act="claim" data-id="${task.id}" aria-label="Take it: ${task.title}">Take it</button>
               </li>`)}

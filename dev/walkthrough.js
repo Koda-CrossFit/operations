@@ -345,6 +345,7 @@ const SCENES = {
     check(check0.w >= 56, `the check zone is at least 56 wide (${check0.w})`);
     check(Math.abs(check0.h - check0.rowH) <= 1, `the check zone is the full row height (${check0.h} of ${check0.rowH})`);
     check(await page.eval(`document.querySelector('.task').innerText.includes('Top priority')`), 'the top priority task is first, with its chip');
+    check(await page.eval(`[...document.querySelectorAll('.task')].every((row) => !row.innerText.includes('About '))`), 'tasks do not show how long they should take');
 
     // The check is instant: right after the click, with no time for a round trip.
     await page.click('.check', { settle: 0 });
@@ -389,6 +390,7 @@ const SCENES = {
     await page.click('.open-toggle');
     await page.waitText('Take it');
     await page.shot('phone-today-open-tasks');
+    check(await page.eval(`[...document.querySelectorAll('.open-row')].every((row) => !row.innerText.includes('About '))`), 'open tasks do not show how long they should take');
     check(await page.eval(`document.querySelector('.open-row .btn').getBoundingClientRect().bottom <= document.querySelector('.tabbar').getBoundingClientRect().top`), 'opening the open tasks brings them up from under the tab bar');
     await page.click('.open-row .btn', { text: 'Take it', settle: 0 });
     await page.waitText("It's on your list.");

@@ -246,13 +246,12 @@ function cleanSlots_(raw) {
 
 /* ------------------------------------------------------------------ views ---- */
 
-/** Task in SPEC section 8. A one-off too big for one person's day also says partial:true. */
+/** Task in SPEC section 8. A one-off too big for one person's day also says partial:true. Minutes are for matching and managers, so staff replies don't carry them. */
 function taskView_(row) {
   var view = {
     id: row.id,
     title: row.title,
     details: row.details,
-    minutes: row.minutes,
     priority: row.priority,
     top: row.priority.charAt(0).toUpperCase() === 'A',
     done: row.status === 'done',
@@ -267,9 +266,9 @@ function taskView_(row) {
   return view;
 }
 
-/** Task+doneBy, plus the state a manager needs to read a row. */
+/** Task+doneBy, plus the minutes and state a manager needs to read a row. */
 function managerTaskView_(row) {
-  return Object.assign(taskView_(row), { doneBy: row.doneBy, status: row.status, source: row.source });
+  return Object.assign(taskView_(row), { minutes: row.minutes, doneBy: row.doneBy, status: row.status, source: row.source });
 }
 
 /** Top priority first, then the rest in task order, so check marks never make a row jump. */
@@ -288,7 +287,7 @@ function shiftFor_(name, date) {
   var shift = shiftRows_().filter(function (candidate) {
     return candidate.name === name && candidate.date === date;
   })[0];
-  return shift ? { start: clockLabel_(shift.start), end: clockLabel_(shift.end), minutes: shift.minutes } : null;
+  return shift ? { start: clockLabel_(shift.start), end: clockLabel_(shift.end) } : null;
 }
 
 /** HoursEntry in SPEC section 8. */
