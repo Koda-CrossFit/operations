@@ -108,8 +108,21 @@ function withLock_(work) {
     var result = work();
     SpreadsheetApp.flush();
     return result;
+  } catch (err) {
+    sendWritesOfFailedRequest_();
+    throw err;
   } finally {
     lock.releaseLock();
+  }
+}
+
+/** A failed request's writes still land when its run ends. Sending them now means the next request in line can't read the sheet without them. */
+function sendWritesOfFailedRequest_() {
+  if (!req_().wrote) return;
+  try {
+    SpreadsheetApp.flush();
+  } catch (err) {
+    console.error('Could not send the writes of a failed request: ' + ((err && err.message) || err));
   }
 }
 

@@ -25,7 +25,7 @@ var TABS_ = {
   CLOSED: 'Closed Days',
 };
 
-/** Every tab but Monthly Hours, which is laid out by hand in Seed.js. */
+/** Every tab but Monthly Hours, which is laid out by hand in Seed.js. A run's one batched read (readBatch_ in Util.js) asks for each of these. */
 var HEADERS_ = {
   Staff: ['Rank', 'Name', 'Email', 'Type', 'Set Days', 'Set Tasks', 'Active', 'Notes'],
   Tasks: ['ID', 'Task', 'Details', 'How Frequent', 'Priority', 'Minutes', 'Days', 'Flex Days', 'Active'],
@@ -48,7 +48,8 @@ var HOURS_FORMAT_ = '0.00';
 /**
  * Number format per column, set on every write. Anything not listed stays automatic.
  * Free text is plain text as well as dates, since Sheets would otherwise turn a note like
- * "3/4" into a date and "10:30" into a time.
+ * "3/4" into a date and "10:30" into a time. The batched read sends dates as numbers, so a number
+ * in a stamp or date column here reads back as a date (batchCell_ in Util.js).
  */
 var COLUMN_FORMATS_ = {
   Staff: { 'Set Days': TEXT_FORMAT_, 'Set Tasks': TEXT_FORMAT_, Notes: TEXT_FORMAT_ },
@@ -64,7 +65,7 @@ var COLUMN_FORMATS_ = {
   'Closed Days': { Date: TEXT_FORMAT_, Note: TEXT_FORMAT_ },
 };
 
-/** Columns read back as 'YYYY-MM-DD', whatever Sheets turned them into. */
+/** Columns read back as 'YYYY-MM-DD', whatever Sheets turned them into. A number in one of these reads back as a date too. */
 var DATE_COLUMNS_ = {
   'One-Offs': ['Week Of'],
   Availability: ['Week Of'],
@@ -94,6 +95,10 @@ var COLUMN_WIDTHS_ = {
   Settings: { Key: 160, Value: 300, Notes: 480 },
   'Closed Days': { Date: 90, Note: 240 },
 };
+
+var SERIAL_ZERO_MS_ = -2209161600000; // 1899-12-30 as UTC, the day Sheets counts its dates from
+var SERIAL_MAX_ = 2958465; // 9999-12-31, as far as a date goes. A bigger number in a date column is just a number
+var FLEX_DAYS_MAX_ = 366; // anything bigger in the Flex Days column is a date someone typed, not a real number of days
 
 var DAY_KEYS_ = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 var DAY_NAMES_ = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };

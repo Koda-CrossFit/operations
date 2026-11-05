@@ -6,7 +6,8 @@
  * - A calendar day is a 'YYYY-MM-DD' string. All day and week math runs on those strings
  *   through UTC, so daylight saving can't move a day.
  * - A moment is a Date. The only way between the two is Denver wall-clock time, through
- *   denver_() and wallToDate_().
+ *   denver_() and wallToDate_(). serialToDate_() is the one exception, since it has years of
+ *   stamps to get through: it uses the script's own clock, and readBatch_() checks that first.
  */
 
 /* ------------------------------------------------------------------ the clock ---- */
@@ -422,10 +423,15 @@ function errorReply_(err) {
 
 /* ----------------------------------------------------------- reading the sheet ---- */
 
-var REQ_ = null; // what this run has already read. Apps Script starts every run empty; dev doesn't, so entry points reset it.
+var REQ_ = null; // what this run has already read. Apps Script starts every run empty, and dev/gas-mock.js empties it after each one.
 
+/**
+ * Forgets what was read, since it could be out of date. Two things stay for the rest of the run:
+ * writes that may not have been sent yet, so the next batch still waits for them, and a batch that failed.
+ */
 function resetRequestCache_() {
-  REQ_ = { book: null, sheets: {}, headers: {}, tabs: {}, typed: {} };
+  var last = REQ_ || {};
+  REQ_ = { book: null, sheets: {}, headers: {}, tabs: {}, typed: {}, cells: null, wrote: !!last.wrote, noBatch: !!last.noBatch };
 }
 
 function req_() {
@@ -453,9 +459,56 @@ function sheet_(tab) {
   return cache.sheets[tab];
 }
 
+/** One range for the batch. Log is just its header row: it grows without limit and nothing reads it for data. */
+function batchRange_(tab) {
+  return "'" + tab + "'" + (tab === TABS_.LOG ? '!1:1' : '');
+}
+
+/**
+ * The one read a run makes: every data tab at once, as raw cells. SpreadsheetApp takes three
+ * slow calls per tab, and this takes one. It only sees what has been sent to the sheet, so
+ * anything written before it goes out first. If it fails for any reason, the rest of the run
+ * reads through SpreadsheetApp: slower, never broken.
+ */
+function readBatch_() {
+  var cache = req_();
+  if (cache.cells || cache.noBatch) return;
+  var id = PropertiesService.getScriptProperties().getProperty(PROP_SHEET_ID_);
+  if (!id) return; // book_() has the sentence for this
+  try {
+    if (denver_(new Date(2026, 6, 1, 12), 'HH') !== '12') throw new Error("The script's clock isn't on Denver time, and serialToDate_ needs it to be.");
+    if (cache.wrote) SpreadsheetApp.flush();
+    cache.wrote = false;
+    var tabs = Object.keys(HEADERS_);
+    var reply = Sheets.Spreadsheets.Values.batchGet(id, {
+      ranges: tabs.map(batchRange_),
+      valueRenderOption: 'UNFORMATTED_VALUE',
+      dateTimeRenderOption: 'SERIAL_NUMBER',
+    });
+    if (reply.valueRanges.length !== tabs.length) throw new Error('The reply has the wrong number of tabs.');
+    var cells = {};
+    var headers = {};
+    tabs.forEach(function (tab, index) {
+      var rows = reply.valueRanges[index].values || []; // a fully blank tab has no values at all
+      var wellShaped = rows.every(function (row) {
+        return typeof row.map === 'function';
+      });
+      if (!wellShaped) throw new Error('The ' + tab + ' tab came back in the wrong shape.');
+      if (rows[0] && rows[0].length) headers[tab] = rows[0].map(text_);
+      if (tab !== TABS_.LOG && rows.length) cells[tab] = rows; // setup always leaves headers, so a tab with nothing at all gets a second look through SpreadsheetApp
+    });
+    cache.cells = cells;
+    cache.headers = headers;
+  } catch (err) {
+    cache.noBatch = true;
+    console.warn('The batched read failed, so this run reads the slower way: ' + ((err && err.message) || err));
+  }
+}
+
 /** The headers as they are in the sheet right now, so columns can be moved or added freely. */
 function headersOf_(tab) {
   var cache = req_();
+  readBatch_();
   if (!cache.headers[tab]) {
     var sheet = sheet_(tab);
     var width = Math.max(sheet.getLastColumn(), 1);
@@ -468,30 +521,82 @@ function columnKind_(map, tab, header) {
   return !!(map[tab] && map[tab].indexOf(header) >= 0);
 }
 
+function isDateLike_(tab, header) {
+  var format = columnFormat_(tab, header);
+  return format === STAMP_FORMAT_ || format === DATE_FORMAT_ || columnKind_(DATE_COLUMNS_, tab, header);
+}
+
+/**
+ * A number from a date or stamp cell, which counts days since 1899-12-30 on Denver's clocks -> the moment, to the
+ * millisecond. A Date built from parts reads them on the script's own clock, which appsscript.json sets to Denver.
+ * That asks Utilities for nothing, which matters because a tab can hold years of stamps and each run starts from scratch.
+ */
+function serialToDate_(serial) {
+  var reading = new Date(SERIAL_ZERO_MS_ + Math.round(serial * 86400000)); // the clock reading, written as if it were UTC
+  return new Date(reading.getUTCFullYear(), reading.getUTCMonth(), reading.getUTCDate(), reading.getUTCHours(), reading.getUTCMinutes(), reading.getUTCSeconds(), reading.getUTCMilliseconds());
+}
+
+/** A number that can be a date -> that moment. Anything else stays as it is. */
+function numberToDate_(value) {
+  return typeof value === 'number' && value >= 0 && value <= SERIAL_MAX_ ? serialToDate_(value) : value;
+}
+
+/** A number from a time cell -> 'HH:MM', straight from the fraction of a day. Going through a date in 1899 could pick up an odd historical offset. */
+function fractionToTime_(value) {
+  var ms = Math.round((value - Math.floor(value)) * 86400000);
+  var minutes = Math.floor(ms / 60000) % 1440; // a fraction can round up to a whole day
+  return pad2_(Math.floor(minutes / 60)) + ':' + pad2_(minutes % 60);
+}
+
+/** One cell from the batch -> what getValues() would give. Dates come as plain numbers, so the column says which numbers are dates. */
+function batchCell_(tab, header, value) {
+  if (value === undefined) return ''; // blank cells at the end of a row aren't sent
+  if (typeof value !== 'number') return value;
+  if (columnKind_(TIME_COLUMNS_, tab, header)) return fractionToTime_(value);
+  return isDateLike_(tab, header) ? numberToDate_(value) : value;
+}
+
+/** A tab's rows below the header from the batch, the same as getValues() would give them, or null if this run has to ask SpreadsheetApp. */
+function batchedValues_(tab) {
+  readBatch_();
+  var cells = req_().cells;
+  if (!cells || !cells[tab]) return null;
+  var lines = cells[tab].slice(1);
+  var headers = lines.length ? headersOf_(tab) : [];
+  return lines.map(function (line) {
+    return headers.map(function (header, column) {
+      return batchCell_(tab, header, line[column]);
+    });
+  });
+}
+
+/** A tab's rows below the header from SpreadsheetApp, which also sees writes still waiting to be sent. */
+function sheetValues_(tab) {
+  var sheet = sheet_(tab);
+  var lastRow = sheet.getLastRow();
+  return lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, headersOf_(tab).length).getValues() : [];
+}
+
 /** Rows as objects by header name, each with a `_row` number. Blank rows are skipped. */
 function readTab_(tab) {
   var cache = req_();
   if (cache.tabs[tab]) return cache.tabs[tab];
-  var sheet = sheet_(tab);
-  var lastRow = sheet.getLastRow();
+  var values = batchedValues_(tab) || sheetValues_(tab);
+  var headers = values.length ? headersOf_(tab) : [];
   var rows = [];
-  if (lastRow >= 2) {
-    var headers = headersOf_(tab);
-    var values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
-    values.forEach(function (cells, index) {
-      var row = { _row: index + 2 };
-      var blank = true;
-      headers.forEach(function (header, column) {
-        if (!header) return;
-        var value = unsafeCell_(cells[column]);
-        if (columnKind_(DATE_COLUMNS_, tab, header)) value = dateString_(value);
-        else if (columnKind_(TIME_COLUMNS_, tab, header)) value = timeString_(value);
-        if (value !== '') blank = false;
-        row[header] = value;
-      });
-      if (!blank) rows.push(row);
+  values.forEach(function (cells, index) {
+    var row = { _row: index + 2 };
+    var blank = true;
+    headers.forEach(function (header, column) {
+      if (!header) return;
+      var value = unsafeCell_(cells[column]);
+      if (columnKind_(DATE_COLUMNS_, tab, header)) value = dateString_(value);
+      else if (columnKind_(TIME_COLUMNS_, tab, header)) value = timeString_(value);
+      if (value !== '') blank = false;
+      row[header] = value;
     });
-  }
+    if (!blank) rows.push(row);
+  });
   cache.tabs[tab] = rows;
   return rows;
 }
@@ -510,10 +615,17 @@ function typed_(tab, build) {
 
 /* ----------------------------------------------------------- writing the sheet ---- */
 
+/** After a write. The batch can't see it, so this tab reads through SpreadsheetApp from here on. */
 function invalidate_(tab) {
   var cache = req_();
   delete cache.tabs[tab];
   delete cache.typed[tab];
+  if (cache.cells) delete cache.cells[tab];
+}
+
+/** Just before a write. Set this early, so a write that fails partway counts too. Any batch still to come waits for it to be sent, and a failed request sends it before letting go of the lock. */
+function markWrote_() {
+  req_().wrote = true;
 }
 
 /** Every value headed for a cell comes through here, so nothing can be written unsafely by accident. */
@@ -531,6 +643,7 @@ function appendRows_(tab, objects) {
   if (!objects.length) return 0;
   var sheet = sheet_(tab);
   var headers = headersOf_(tab);
+  markWrote_();
   var start = sheet.getLastRow() + 1;
   var lastNeeded = start + objects.length - 1;
   if (lastNeeded > sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(), lastNeeded - sheet.getMaxRows());
@@ -553,6 +666,7 @@ function appendRows_(tab, objects) {
 function updateRow_(tab, row, fields) {
   var sheet = sheet_(tab);
   var headers = headersOf_(tab);
+  markWrote_();
   Object.keys(fields).forEach(function (header) {
     var column = headers.indexOf(header) + 1;
     if (!column) return;
@@ -568,6 +682,7 @@ function updateRow_(tab, row, fields) {
 function deleteRows_(tab, rowNumbers) {
   if (!rowNumbers.length) return;
   var sheet = sheet_(tab);
+  markWrote_();
   var rows = rowNumbers.slice().sort(function (a, b) {
     return b - a;
   });
@@ -662,6 +777,12 @@ function personNamed_(name) {
   );
 }
 
+/** How far a task can move. A date in the cell (Sheets makes one of 1-2) comes from the batch as a number in the tens of thousands, and counts as no flex, the same as through SpreadsheetApp. */
+function flexDays_(value) {
+  var days = parseInt(value, 10) || 0;
+  return days > FLEX_DAYS_MAX_ ? 0 : Math.max(0, days);
+}
+
 /** 'Set' means only set staff unless covering. Mon-Sat and the word Daily both read as the full list. */
 function tasks_() {
   return typed_(TABS_.TASKS, function (rows) {
@@ -678,7 +799,7 @@ function tasks_() {
           minutes: Number(row['Minutes']) || 0,
           days: setOnly ? [] : /^daily$/i.test(days) ? parseDays_('Mon-Sat') : parseDays_(days),
           setOnly: setOnly,
-          flexDays: Math.max(0, parseInt(row['Flex Days'], 10) || 0),
+          flexDays: flexDays_(row['Flex Days']),
           active: isActive_(row['Active']),
           order: index + 1,
         };
@@ -904,17 +1025,13 @@ function closedNote_(date) {
   return closedDays_()[date] || '';
 }
 
-/** Lines on the Closed Days tab that can't be read as a date. Those days get scheduled as usual, so the Friday summary says so. */
+/** Lines on the Closed Days tab that can't be read as a date. Those days get scheduled as usual, so the Friday summary says so. This reads what readTab_ read, so the two can't disagree. */
 function unreadableClosedDays_() {
-  var sheet = sheet_(TABS_.CLOSED);
-  var lastRow = sheet.getLastRow();
-  var column = headersOf_(TABS_.CLOSED).indexOf('Date') + 1;
-  if (lastRow < 2 || !column) return [];
-  return sheet
-    .getRange(2, column, lastRow - 1, 1)
-    .getValues()
+  var column = headersOf_(TABS_.CLOSED).indexOf('Date');
+  if (column < 0) return [];
+  return (batchedValues_(TABS_.CLOSED) || sheetValues_(TABS_.CLOSED))
     .map(function (line) {
-      return line[0];
+      return line[column];
     })
     .filter(function (value) {
       return text_(value) && !dateString_(value);
@@ -922,13 +1039,13 @@ function unreadableClosedDays_() {
     .map(text_);
 }
 
-/** {key: value} from the Settings tab. */
+/** {key: value} from the Settings tab. first_week is the one date in a column of text, so if it's in a date cell, the batch's number has to be turned back here. */
 function settings_() {
   return typed_(TABS_.SETTINGS, function (rows) {
     var settings = {};
     rows.forEach(function (row) {
       var key = text_(row['Key']);
-      if (key) settings[key] = row['Value'];
+      if (key) settings[key] = key === 'first_week' ? numberToDate_(row['Value']) : row['Value'];
     });
     return settings;
   });

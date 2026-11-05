@@ -41,6 +41,8 @@ function adminSetup_(req) {
   props.setProperty(PROP_SHEET_ID_, book.getId());
   if (!existingCode) props.setProperty(PROP_MANAGER_CODE_, code);
   resetRequestCache_();
+  req_().noBatch = true; // setup writes straight to the sheet as it makes tabs, and the batch couldn't see those writes
+  markWrote_();
 
   book.setSpreadsheetTimeZone(TZ_);
   Object.keys(HEADERS_).forEach(function (tab) {

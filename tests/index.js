@@ -6,4 +6,5 @@
 
 require('./scheduler.test.js');
 require('./api.test.js');
+require('./reads.test.js');
 require('./site.test.js');

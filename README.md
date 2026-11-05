@@ -109,6 +109,17 @@ clasp update-deployment <deployment id>
 
 The page only sees a change once the deployment is updated. Updating the same deployment keeps the same web app URL.
 
+**When `appsscript.json` has changed, use `clasp push --force`.** Without it, clasp prints "Skipping push" and uploads nothing, and the next `clasp create-version` quietly repeats the old code.
+
+## How reads work
+
+Reading through SpreadsheetApp is slow: a few hundred milliseconds a call, sometimes far more, and three calls per tab. So the first read in a run is one call to the Sheets service (`Sheets.Spreadsheets.Values.batchGet`) that gets every data tab at once, and everything else that run reads comes from that. It took about half a second on an empty sheet, the only size it has been timed at so far (see Known limits). Log only sends its header row, since it grows without limit and nothing reads it for data. Monthly Hours isn't read at all.
+
+- **Dates and times:** the batch sends these as plain numbers, so the date and time columns in `Config.js` say which numbers to turn back, and a plain number typed into one of those columns reads as a date or time too. `first_week` in `Settings` gets turned back the same way. A date in any other column stays a plain number, and one in `Flex Days` counts as no flex. The number is Denver clock time, so the sheet has to stay on Denver time, which `adminSetup` sets. Turning it back uses the script's own clock, which `appsscript.json` sets to Denver. A run checks that first, and if the clock isn't Denver's, that run reads through SpreadsheetApp.
+- **Writes:** these still go through SpreadsheetApp, and the batch can't see a write that's still waiting to be sent. Once a run writes to a tab, later reads of that tab in that run use SpreadsheetApp, which does see it. Anything written before the batch gets flushed first, and a request that fails partway sends what it wrote before it lets go of the lock, so the next request in line sees it.
+- **If the batch fails,** for any reason, or its reply isn't the right shape, that run logs a warning and reads through SpreadsheetApp: slower, never broken. A tab that comes back with nothing at all, not even headers, gets a second look through SpreadsheetApp too, since setup always leaves headers.
+- **`adminSetup`** always reads through SpreadsheetApp, because it writes straight to the sheet as it makes tabs.
+
 ## Running it locally
 
 No Google needed. There's nothing to install beyond Node.
@@ -130,13 +141,15 @@ The site runs at http://localhost:8787, with the real backend code running again
 
 The page itself needs a connection to open. Taps on a page that's already open are safe with no signal: they wait on the phone and send once it's back. But reloading, or opening the site cold, with no connection at all gives the browser's own error page until the signal returns, and nothing waiting is lost. A small service worker fixes this, and it's the first change planned after launch. It isn't in yet because a bad one is hard to undo on people's phones, and the site should run on real Google first. When that goes in, make the `offline` walkthrough scene really go offline, not just block `/api`.
 
+The batch carries every row of every data tab on every request that reads anything, even one that only needs the staff list. At the site's pace that's about 0.7 MB more each year, and Google suggests 2 MB a request at most, which is about three years away. An error from Google falls back to SpreadsheetApp, but a batch that just gets slower doesn't, and nothing warns about it. So once there's real history, time a read on a copy of the sheet with 3,000 and then 20,000 `Schedule` rows. If it has gotten slow, move old `Schedule` rows to an archive tab that isn't in `HEADERS_`, since the batch only asks for those.
+
 ## Tests
 
 ```
 node --test
 ```
 
-`tests/scheduler.test.js` covers the matching rules, `tests/api.test.js` covers every handler and automation against the fake Google services, and `tests/site.test.js` checks what it can about `index.html` and `assets/` without a browser.
+`tests/scheduler.test.js` covers the matching rules, `tests/api.test.js` covers every handler and automation against the fake Google services, `tests/reads.test.js` checks that reading through the batch gives the same answers as SpreadsheetApp and stays fast, and `tests/site.test.js` checks what it can about `index.html` and `assets/` without a browser.
 
 To walk the real site in a real browser, start the local server and run this in a second window. It needs Microsoft Edge, clicks through every screen at phone, narrow phone and desktop sizes, tests the offline queue and a slow server, fails on any console error, sideways scroll, or a screen that keeps asking the server for things while it sits idle, and saves a screenshot of each screen to `dev/screenshots/` (not committed). `node dev/walkthrough.js today offline` runs just those parts.
 

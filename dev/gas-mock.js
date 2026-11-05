@@ -11,8 +11,24 @@
  * - A string starting with = becomes a formula. A leading apostrophe marks text and isn't
  *   stored, so a safeCell_ value reads back without it.
  * - A range outside the sheet throws, and deleting every unfrozen row throws.
+ * - While a script runs, its writes wait to be sent until a flush or the end of the run.
+ *   SpreadsheetApp sees them anyway. Sheets.Spreadsheets.Values.batchGet doesn't.
+ * - batchGet sends cells the way the real one does: dates as serial numbers on the sheet's
+ *   clock, blanks at the end of a row or a range left out, and a bad range fails the whole call.
+ *
+ * Where the fake is not a real sheet, so a clean run here proves nothing about these:
+ * - A real cell holds one number and a format, and getValues picks a Date or a number from the
+ *   format. Here a cell holds a Date or a number, whatever its format says.
+ * - So the fake keeps both passes of the hour the clocks repeat, which a real cell can't tell
+ *   apart, and can't hold a reading the clocks skip, which a real cell can.
+ * - It doesn't compute formulas, and it runs one request at a time.
  *
  * Time: `__NOW__` in the context is the fake clock. Cached values expire by that clock too.
+ *
+ * Tests can make batchGet fail with `state.beforeBatch`, and can see what a script did in
+ * `state.counters` (batchGet, flush, sheetReads, readCalls) and `state.batchRanges`. Only a
+ * running script counts: a test looking at a sheet or typing in one, the way a person would,
+ * doesn't count and is never held back.
  */
 
 process.env.TZ = 'America/Denver'; // before any date use, so local Date matches a script running in Denver
@@ -40,19 +56,31 @@ function pad(value, width) {
 
 /* ------------------------------------------------------------ Utilities.formatDate ---- */
 
+const zoneFormats = new Map(); // making one of these is slow, and a batch can turn hundreds of dates into serial numbers
+
+function zoneFormat(timeZone) {
+  if (!zoneFormats.has(timeZone)) {
+    zoneFormats.set(
+      timeZone,
+      new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hourCycle: 'h23',
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+        weekday: 'long',
+      })
+    );
+  }
+  return zoneFormats.get(timeZone);
+}
+
 function zoned(date, timeZone) {
   const parts = {};
-  new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
-    weekday: 'long',
-  })
+  zoneFormat(timeZone)
     .formatToParts(date)
     .forEach((part) => {
       parts[part.type] = part.value;
@@ -130,8 +158,14 @@ function formatDate(date, timeZone, pattern) {
 
 /* --------------------------------------------------------------------- the sheets ---- */
 
-/** What a cell holds after a write: {value, formula}. */
-function coerce(value, format) {
+/** This year's date for a month and day typed with no year, or null if there's no such day, which Sheets leaves as text. */
+function dayThisYear(year, month, day) {
+  const date = new Date(year, month - 1, day);
+  return date.getMonth() === month - 1 && date.getDate() === day ? date : null;
+}
+
+/** What a cell holds after a write: {value, formula}. `year` is this year by the fake clock. */
+function coerce(value, format, year) {
   if (value === undefined) throw new TypeError('A cell was written with undefined.');
   if (value === null) return { value: '', formula: '' };
   if (isDate(value)) return { value: new Date(value.getTime()), formula: '' };
@@ -147,8 +181,16 @@ function coerce(value, format) {
   if (match) return { value: new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])), formula: '' };
   match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value);
   if (match) return { value: new Date(Number(match[3]), Number(match[1]) - 1, Number(match[2])), formula: '' };
+  match = /^(\d{1,2})[-/](\d{1,2})$/.exec(value); // 1-2 and 3/4
+  let date = match && dayThisYear(year, Number(match[1]), Number(match[2]));
+  if (date) return { value: date, formula: '' };
+  match = /^([a-z]{3,})\.?\s+(\d{1,2})$/i.exec(value); // Dec 25
+  date = match && dayThisYear(year, MONTHS.findIndex((name) => name.toLowerCase().startsWith(match[1].toLowerCase())) + 1, Number(match[2]));
+  if (date) return { value: date, formula: '' };
   match = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(value);
   if (match && Number(match[1]) < 24) return { value: new Date(1899, 11, 30, Number(match[1]), Number(match[2])), formula: '' };
+  match = /^(\d{1,2}):(\d{2})\s*(am|pm)$/i.exec(value); // 1:05 PM
+  if (match && Number(match[1]) >= 1 && Number(match[1]) <= 12) return { value: new Date(1899, 11, 30, Number(match[1]) % 12 + (/pm/i.test(match[3]) ? 12 : 0), Number(match[2])), formula: '' };
   return { value, formula: '' };
 }
 
@@ -254,14 +296,14 @@ class FakeRange {
     });
     this.eachCell((r, c, i, j) => {
       const cell = this.sheet.cell(r, c);
-      Object.assign(cell, coerce(values[i][j], cell.format));
+      Object.assign(cell, coerce(values[i][j], cell.format, this.sheet.book.world.year()));
     });
     return this;
   }
   setValue(value) {
     this.eachCell((r, c) => {
       const cell = this.sheet.cell(r, c);
-      Object.assign(cell, coerce(value, cell.format));
+      Object.assign(cell, coerce(value, cell.format, this.sheet.book.world.year()));
     });
     return this;
   }
@@ -312,6 +354,7 @@ class FakeSheet {
     this.maxColumns = columns === undefined ? 26 : columns;
     this.frozenRows = 0;
     this.grid = []; // grid[row-1][column-1] = cell, made on first touch
+    this.sent = null; // while writes are waiting to be sent: the grid as it was before them
   }
 
   cell(row, column) {
@@ -450,9 +493,10 @@ class FakeSheet {
 });
 
 class FakeBook {
-  constructor(id, name) {
+  constructor(id, name, world) {
     this.id = id;
     this.name = name;
+    this.world = world;
     this.sheets = [new FakeSheet(this, 'Sheet1')];
     this.timeZone = 'Etc/GMT';
     this.editors = [];
@@ -494,6 +538,100 @@ class FakeBook {
   }
 }
 
+/* --------------------------------------------- what a running script does to a sheet ---- */
+
+const sheetOf = (target) => target.sheet || target;
+
+function countAsReads(Class, names) {
+  names.forEach((name) => {
+    const real = Class.prototype[name];
+    Class.prototype[name] = function (...args) {
+      const sheet = sheetOf(this);
+      const world = sheet.book.world;
+      if (!world.runDepth || world.reading) return real.apply(this, args);
+      const key = `${sheet.name}.${name}`;
+      world.counters.sheetReads += 1;
+      world.counters.readCalls[key] = (world.counters.readCalls[key] || 0) + 1;
+      world.reading = true; // getDataRange asks getLastRow for itself, and that's still one call
+      try {
+        return real.apply(this, args);
+      } finally {
+        world.reading = false;
+      }
+    };
+  });
+}
+
+function holdUntilFlush(Class, names) {
+  names.forEach((name) => {
+    const real = Class.prototype[name];
+    Class.prototype[name] = function (...args) {
+      const sheet = sheetOf(this);
+      if (sheet.book.world.runDepth && !sheet.sent) sheet.sent = sheet.grid.map((line) => line.map((cell) => ({ ...cell })));
+      return real.apply(this, args);
+    };
+  });
+}
+
+countAsReads(FakeRange, ['getValues', 'getValue', 'getDisplayValues', 'getDisplayValue', 'getFormulas', 'getFormula', 'getNumberFormats', 'getNumberFormat']);
+countAsReads(FakeSheet, ['getLastRow', 'getLastColumn', 'getMaxRows', 'getMaxColumns', 'getFrozenRows', 'getDataRange']);
+holdUntilFlush(FakeRange, ['setValues', 'setValue', 'setFormulas', 'setFormula', 'setNumberFormat', 'setNumberFormats', 'clearContent', 'clear']);
+holdUntilFlush(FakeSheet, ['appendRow', 'deleteRows', 'deleteRow', 'insertRowsAfter', 'insertColumnsAfter', 'clear', 'clearContents']);
+
+/* ------------------------------------------------ Sheets.Spreadsheets.Values.batchGet ---- */
+
+const SERIAL_ZERO = Date.UTC(1899, 11, 30);
+
+/** A Date the way the values API sends it: days since 1899-12-30, on the spreadsheet's clock. That clock reading is all a sheet keeps. */
+function dateToSerial(date, timeZone) {
+  const z = zoned(date, timeZone);
+  const ms = date.getTime() - Math.floor(date.getTime() / 1000) * 1000;
+  return (Date.UTC(z.year, z.month - 1, z.day, z.hour, z.minute, z.second, ms) - SERIAL_ZERO) / 86400000;
+}
+
+/**
+ * "'Time Off'", "Schedule!A1:Z1000" or "'Log'!1:1" -> {tab, firstRow, lastRow, firstColumn, lastColumn}, with
+ * Infinity for no end. Without quotes, a tab name can only have letters, numbers and underscores in it.
+ */
+function parseRange(text) {
+  const match = /^(?:'((?:[^']|'')+)'|([A-Za-z0-9_]+))(?:!(.+))?$/.exec(text);
+  if (!match) return null;
+  const tab = match[1] === undefined ? match[2] : match[1].replace(/''/g, "'");
+  if (!match[3]) return { tab, firstRow: 1, lastRow: Infinity, firstColumn: 1, lastColumn: Infinity };
+  const rows = /^(\d+):(\d+)$/.exec(match[3]);
+  if (rows) return { tab, firstRow: Number(rows[1]), lastRow: Number(rows[2]), firstColumn: 1, lastColumn: Infinity };
+  const box = /^([A-Za-z]+)(\d+):([A-Za-z]+)(\d+)$/.exec(match[3]);
+  if (!box) return null;
+  return { tab, firstRow: Number(box[2]), lastRow: Number(box[4]), firstColumn: letterToColumn(box[1]), lastColumn: letterToColumn(box[3]) };
+}
+
+/** One entry of the reply. Only what has been sent to the sheet, with blanks at the end of a row or the range left out, and no values at all if that's everything. */
+function valueRange(book, text) {
+  const wanted = parseRange(text);
+  const sheet = wanted && book.getSheetByName(wanted.tab);
+  if (!sheet) throw new Error(`API call to sheets.spreadsheets.values.batchGet failed with error: Unable to parse range: ${text}`);
+  const grid = sheet.sent || sheet.grid;
+  const lastRow = Math.min(wanted.lastRow, sheet.maxRows);
+  const lastColumn = Math.min(wanted.lastColumn, sheet.maxColumns);
+  const values = [];
+  for (let r = wanted.firstRow; r <= Math.min(lastRow, grid.length); r++) {
+    const line = grid[r - 1];
+    const cells = [];
+    for (let c = wanted.firstColumn; c <= Math.min(lastColumn, line.length); c++) {
+      const cell = line[c - 1];
+      if (!cell) cells.push('');
+      else cells.push(isDate(cell.value) ? dateToSerial(cell.value, book.getSpreadsheetTimeZone()) : cell.value);
+    }
+    while (cells.length && cells[cells.length - 1] === '') cells.pop();
+    values.push(cells);
+  }
+  while (values.length && !values[values.length - 1].length) values.pop();
+  const name = /^[A-Za-z0-9_]+$/.test(wanted.tab) ? wanted.tab : `'${wanted.tab}'`;
+  const entry = { range: `${name}!${columnToLetter(wanted.firstColumn)}${wanted.firstRow}:${columnToLetter(lastColumn)}${lastRow}`, majorDimension: 'ROWS' };
+  if (values.length) entry.values = values;
+  return entry;
+}
+
 /* --------------------------------------------------------------------- the world ---- */
 
 function plainFilesInOrder() {
@@ -520,9 +658,14 @@ function createGas(options) {
     triggers: [],
     mail: [],
     logs: [],
-    counters: { openById: 0, mail: 0 },
+    counters: { openById: 0, mail: 0, batchGet: 0, flush: 0, sheetReads: 0, readCalls: {} },
+    batchRanges: [], // the ranges asked for by each batchGet
+    runDepth: 0, // above zero while a script is running
+    reading: false,
     lockBusy: false,
     beforeMail: null, // set to a function to make a send throw, for crash tests
+    beforeBatch: null, // set to a function to make batchGet throw, or return something for it to answer with instead
+    year: () => new Date(clock()).getFullYear(),
   };
 
   const clock = () => {
@@ -580,9 +723,17 @@ function createGas(options) {
   };
 
   const addBook = (id, name) => {
-    const book = new FakeBook(id, name);
+    const book = new FakeBook(id, name, state);
     state.books.set(id, book);
     return book;
+  };
+
+  const sendWaitingWrites = () => {
+    state.books.forEach((book) => {
+      book.sheets.forEach((sheet) => {
+        sheet.sent = null;
+      });
+    });
   };
 
   const SpreadsheetApp = {
@@ -592,8 +743,29 @@ function createGas(options) {
       return state.books.get(id);
     },
     create: (name) => addBook('created-' + crypto.randomUUID(), name),
-    flush() {},
+    flush() {
+      if (state.runDepth) state.counters.flush += 1;
+      sendWaitingWrites();
+    },
     getActiveSpreadsheet: () => null,
+  };
+
+  const Sheets = {
+    Spreadsheets: {
+      Values: {
+        batchGet(id, options) {
+          state.counters.batchGet += 1;
+          state.batchRanges.push(Array.from(options.ranges));
+          if (state.beforeBatch) {
+            const answer = state.beforeBatch(id, options);
+            if (answer !== undefined) return answer;
+          }
+          if (!state.books.has(id)) throw new Error('API call to sheets.spreadsheets.values.batchGet failed with error: Requested entity was not found.');
+          if (options.valueRenderOption !== 'UNFORMATTED_VALUE' || options.dateTimeRenderOption !== 'SERIAL_NUMBER') throw new Error('The mock batchGet only does UNFORMATTED_VALUE with SERIAL_NUMBER.');
+          return { spreadsheetId: id, valueRanges: options.ranges.map((range) => valueRange(state.books.get(id), range)) };
+        },
+      },
+    },
   };
 
   const triggerBuilder = (handler) => {
@@ -653,6 +825,7 @@ function createGas(options) {
 
   const context = vm.createContext({
     SpreadsheetApp,
+    Sheets,
     PropertiesService: { getScriptProperties: () => scriptProperties },
     CacheService: { getScriptCache: () => scriptCache },
     LockService: { getScriptLock: () => scriptLock },
@@ -677,6 +850,24 @@ function createGas(options) {
 
   if (!compiled) compiled = plainFilesInOrder();
   compiled.forEach((script) => script.runInContext(context));
+
+  /** One run of the script. At the end, Apps Script sends anything still waiting, and the next run starts empty. */
+  const run = (work) => {
+    state.runDepth += 1;
+    try {
+      return work();
+    } finally {
+      state.runDepth -= 1;
+      if (!state.runDepth) {
+        sendWaitingWrites();
+        context.REQ_ = null;
+      }
+    }
+  };
+  ['doGet', 'doPost', 'tick'].forEach((name) => {
+    const real = context[name];
+    context[name] = (...args) => run(() => real(...args));
+  });
 
   const reply = (output) => JSON.parse(output.getContent());
 
@@ -705,11 +896,21 @@ function createGas(options) {
     },
     tick: () => JSON.parse(JSON.stringify(context.tick())),
 
-    /** Call any function in the script's global scope, starting from an empty per-run cache. */
+    /** Call any function in the script's global scope, as a run of its own. */
     call(name, ...args) {
-      context.resetRequestCache_();
-      const out = context[name](...args);
-      return out === undefined ? undefined : JSON.parse(JSON.stringify(out));
+      return run(() => {
+        context.resetRequestCache_();
+        const out = context[name](...args);
+        return out === undefined ? undefined : JSON.parse(JSON.stringify(out));
+      });
+    },
+
+    /** One whole run: `work` gets the script's global scope, and everything it does shares one per-run cache. */
+    run(work) {
+      return run(() => {
+        context.resetRequestCache_();
+        return work(context);
+      });
     },
 
     /** An empty spreadsheet, as if someone made one and passed its ID to setup. */
@@ -768,4 +969,4 @@ function fakeManagers() {
   return STAFF.filter((person) => person.type === 'Manager').map((person) => ({ name: person.name, email: person.email }));
 }
 
-module.exports = { createGas, fakeManagers, formatDate };
+module.exports = { createGas, fakeManagers, formatDate, dateToSerial };

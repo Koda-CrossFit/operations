@@ -2708,6 +2708,7 @@ test('all the backend files are there, and the manifest has the right scopes', (
     'https://www.googleapis.com/auth/script.send_mail',
     'https://www.googleapis.com/auth/spreadsheets',
   ]);
+  assert.deepStrictEqual(manifest.dependencies.enabledAdvancedServices, [{ userSymbol: 'Sheets', version: 'v4', serviceId: 'sheets' }], 'without this every read quietly goes the slow way');
 });
 
 test('every top-level name across the backend is unique, and private ones end in an underscore', () => {
@@ -2904,7 +2905,7 @@ test('after the deadline: taking hours away tells the managers what no longer fi
   gas.setNow(at(LAST_FRI, '17:00'));
   const reply = ok(save(gas, 'Ana', MON, 2, { Mon: [9], Wed: [9], Fri: [9] }));
   assert.strictEqual(reply.late, false);
-  assert.deepStrictEqual(snapshotRows(gas, (row) => row.Name === 'Ana'), rowsBefore, 'that is a rule for Kevin to decide');
+  assert.deepStrictEqual(snapshotRows(gas, (row) => row.Name === 'Ana'), rowsBefore, 'that is a rule for the owner to decide');
   const alert = gas.state.mail.find((mail) => /Ana's availability changed/.test(mail.subject));
   assert.match(alert.htmlBody, /No longer fits/);
   assert.match(alert.htmlBody, /Has 5\.7 hours this week and now wants 2/);
