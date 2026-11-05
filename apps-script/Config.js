@@ -17,7 +17,6 @@ var TABS_ = {
   AVAILABILITY: 'Availability',
   TIME_OFF: 'Time Off',
   SCHEDULE: 'Schedule',
-  SHIFTS: 'Shifts',
   HOURS: 'Hours',
   MONTHLY: 'Monthly Hours',
   LOG: 'Log',
@@ -34,7 +33,6 @@ var HEADERS_ = {
   Availability: ['Week Of', 'Name', 'Submitted At', 'Late', 'None', 'Hours Wanted', 'Slots', 'Readable', 'Notes'],
   'Time Off': ['ID', 'Name', 'From', 'To', 'Note', 'Added At', 'Status'],
   Schedule: ['ID', 'Week Of', 'Date', 'Day', 'Name', 'Task ID', 'One-Off ID', 'Task', 'Details', 'Priority', 'Minutes', 'Source', 'Status', 'Done At', 'Done By', 'Note', 'Rolled From'],
-  Shifts: ['Week Of', 'Date', 'Name', 'Start', 'End', 'Minutes'],
   Hours: ['ID', 'Date', 'Name', 'In', 'Out', 'Hours', 'Source', 'Flag', 'Note', 'Edited By', 'Edited At'],
   Log: ['Time', 'Who', 'Action', 'Details'],
   Settings: ['Key', 'Value', 'Notes'],
@@ -60,7 +58,6 @@ var COLUMN_FORMATS_ = {
   Availability: { 'Week Of': TEXT_FORMAT_, 'Submitted At': STAMP_FORMAT_, Slots: TEXT_FORMAT_, Readable: TEXT_FORMAT_, Notes: TEXT_FORMAT_ },
   'Time Off': { ID: TEXT_FORMAT_, From: TEXT_FORMAT_, To: TEXT_FORMAT_, Note: TEXT_FORMAT_, 'Added At': STAMP_FORMAT_ },
   Schedule: { ID: TEXT_FORMAT_, 'Week Of': TEXT_FORMAT_, Date: TEXT_FORMAT_, Day: TEXT_FORMAT_, 'Task ID': TEXT_FORMAT_, 'One-Off ID': TEXT_FORMAT_, Task: TEXT_FORMAT_, Details: TEXT_FORMAT_, Priority: TEXT_FORMAT_, 'Done At': STAMP_FORMAT_, Note: TEXT_FORMAT_, 'Rolled From': TEXT_FORMAT_ },
-  Shifts: { 'Week Of': TEXT_FORMAT_, Date: TEXT_FORMAT_, Start: TEXT_FORMAT_, End: TEXT_FORMAT_ },
   Hours: { ID: TEXT_FORMAT_, Date: DATE_FORMAT_, In: STAMP_FORMAT_, Out: STAMP_FORMAT_, Hours: HOURS_FORMAT_, Note: TEXT_FORMAT_, 'Edited At': STAMP_FORMAT_ },
   Log: { Time: STAMP_FORMAT_, Action: TEXT_FORMAT_, Details: TEXT_FORMAT_ },
   Settings: { Value: TEXT_FORMAT_ },
@@ -74,15 +71,9 @@ var DATE_COLUMNS_ = {
   Availability: ['Week Of'],
   'Time Off': ['From', 'To'],
   Schedule: ['Week Of', 'Date', 'Rolled From'],
-  Shifts: ['Week Of', 'Date'],
   Hours: ['Date'],
   'Closed Days': ['Date'],
   'Extra Work': ['Date'],
-};
-
-/** Columns read back as 'HH:MM'. */
-var TIME_COLUMNS_ = {
-  Shifts: ['Start', 'End'],
 };
 
 /** Starting widths in pixels, so a person can read each tab without resizing it. */
@@ -93,7 +84,6 @@ var COLUMN_WIDTHS_ = {
   Availability: { 'Week Of': 90, Name: 110, 'Submitted At': 150, Late: 60, None: 60, 'Hours Wanted': 90, Slots: 240, Readable: 280, Notes: 280 },
   'Time Off': { ID: 110, Name: 110, From: 90, To: 90, Note: 260, 'Added At': 150, Status: 80 },
   Schedule: { ID: 220, 'Week Of': 90, Date: 90, Day: 50, Name: 110, 'Task ID': 60, 'One-Off ID': 110, Task: 280, Details: 320, Priority: 70, Minutes: 60, Source: 70, Status: 70, 'Done At': 150, 'Done By': 90, Note: 240, 'Rolled From': 90 },
-  Shifts: { 'Week Of': 90, Date: 90, Name: 110, Start: 60, End: 60, Minutes: 60 },
   Hours: { ID: 110, Date: 90, Name: 110, In: 150, Out: 150, Hours: 60, Source: 70, Flag: 70, Note: 260, 'Edited By': 90, 'Edited At': 150 },
   Log: { Time: 150, Who: 110, Action: 130, Details: 520 },
   Settings: { Key: 160, Value: 300, Notes: 480 },
@@ -110,11 +100,10 @@ var DAY_KEYS_ = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 var DAY_NAMES_ = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };
 var MONTH_NAMES_ = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-var SLOT_FIRST_HOUR_ = 5; // the availability grid runs from this start hour...
-var SLOT_LAST_HOUR_ = 21; // ...to this one, so a 9 PM block ends at 10 PM
 var WEEKS_AHEAD_ = 6; // Mondays offered on the Availability tab
 var WEEKS_MAX_AHEAD_ = 52; // the furthest out anyone can save availability
 var HOURS_WANTED_MAX_ = 40;
+var DAY_HOURS_MAX_ = 16; // the most hours anyone can offer in one day
 var ONE_OFF_MAX_MINUTES_ = 960;
 
 var MAX_TITLE_ = 120;

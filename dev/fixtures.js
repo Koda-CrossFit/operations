@@ -9,7 +9,6 @@ const { SEED_TASKS_ } = require('../apps-script/SeedTasks.js');
 
 const WEEK_OF = '2026-11-09'; // a Monday, the first live week (Settings.first_week)
 const TODAY = '2026-11-06'; // the Friday before it
-const NOW_MINUTES = 420; // 7:00 AM, when the weekly run happens
 
 const MON_SAT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -43,29 +42,27 @@ function copy(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-/** [from, from+1, ... to-1]: the start hours of the one-hour blocks between two times. */
-function hours(from, to) {
-  const out = [];
-  for (let hour = from; hour < to; hour++) out.push(hour);
-  return out;
+/** {Mon:3, Wed:3}: the same hours on each of those days. */
+function hoursEach(days, hours) {
+  const dayHours = {};
+  days.forEach((day) => {
+    dayHours[day] = hours;
+  });
+  return dayHours;
 }
 
-/** One availability entry: avail(6, ['Mon', 'Wed'], 9, 12) wants 6 hours, free 9 to 12 on those days. */
-function avail(hoursWanted, days, from, to) {
-  const slots = {};
-  days.forEach((day) => {
-    slots[day] = hours(from, to);
-  });
-  return { none: false, hoursWanted, slots };
+/** One availability entry: avail(6, ['Mon', 'Wed'], 3) wants 6 hours, free 3 hours on each of those days. */
+function avail(hoursWanted, days, hours) {
+  return { none: false, hoursWanted, dayHours: hoursEach(days, hours) };
 }
 
 /** The availability from the worked example in SPEC section 6. */
 function workedExampleAvailability() {
   return {
-    Ana: avail(6, ['Mon', 'Wed', 'Fri'], 9, 12),
-    Ben: avail(4, ['Tue', 'Thu'], 10, 13),
-    Cora: avail(20, MON_SAT, 8, 16),
-    Dev: avail(5, ['Tue', 'Thu'], 13, 16),
+    Ana: avail(6, ['Mon', 'Wed', 'Fri'], 3),
+    Ben: avail(4, ['Tue', 'Thu'], 3),
+    Cora: avail(20, MON_SAT, 8),
+    Dev: avail(5, ['Tue', 'Thu'], 3),
   };
 }
 
@@ -123,7 +120,6 @@ function buildInput(overrides) {
   return {
     weekOf: WEEK_OF,
     today: TODAY,
-    nowMinutes: NOW_MINUTES,
     staff: copy(STAFF),
     tasks: copy(SEED_TASKS_),
     oneOffs: [],
@@ -138,10 +134,9 @@ function buildInput(overrides) {
 module.exports = {
   WEEK_OF,
   TODAY,
-  NOW_MINUTES,
   MON_SAT,
   STAFF,
-  hours,
+  hoursEach,
   avail,
   workedExampleAvailability,
   task,

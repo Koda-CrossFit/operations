@@ -8,7 +8,7 @@ const assert = require('node:assert');
 
 const { createGas, fakeManagers, dateToSerial } = require('../dev/gas-mock.js');
 const { resetWorld } = require('../dev/server.js');
-const { hours } = require('../dev/fixtures.js');
+const { hoursEach } = require('../dev/fixtures.js');
 
 const CODE = '000000';
 const DENVER = 'America/Denver';
@@ -26,8 +26,8 @@ const SAT = '2026-11-14';
 const SUN = '2026-11-15';
 const NEXT_MON = '2026-11-16';
 
-const DATA_TABS = ['Staff', 'Tasks', 'One-Offs', 'Availability', 'Time Off', 'Schedule', 'Shifts', 'Hours', 'Settings', 'Closed Days'];
-const EVERY_RANGE = ["'Staff'", "'Tasks'", "'One-Offs'", "'Availability'", "'Time Off'", "'Schedule'", "'Shifts'", "'Hours'", "'Log'!1:1", "'Settings'", "'Closed Days'", "'Extra Work'"];
+const DATA_TABS = ['Staff', 'Tasks', 'One-Offs', 'Availability', 'Time Off', 'Schedule', 'Hours', 'Settings', 'Closed Days'];
+const EVERY_RANGE = ["'Staff'", "'Tasks'", "'One-Offs'", "'Availability'", "'Time Off'", "'Schedule'", "'Hours'", "'Log'!1:1", "'Settings'", "'Closed Days'", "'Extra Work'"];
 
 /* ---------------------------------------------------------------------- helpers ---- */
 
@@ -74,14 +74,6 @@ function counted(gas, work) {
 
 function warnings(gas) {
   return gas.state.logs.filter((line) => line.level === 'warn');
-}
-
-function slotsFor(days, from, to) {
-  const slots = {};
-  days.forEach((day) => {
-    slots[day] = hours(from, to);
-  });
-  return slots;
 }
 
 /** A fake world whose new IDs are the same every time, so two worlds can be compared line for line. */
@@ -132,7 +124,6 @@ function typeIntoTheSheet(gas) {
 
   gas.sheet('Availability').insertRowsAfter(3, 1); // a blank row in the middle
 
-  typeCell(gas, 'Shifts', 2, 'Start', '09:30'); // Sheets makes this a time
   gas.sheet('Time Off').appendRow(['', 'Dev', '2026-11-20', '11/21/2026', 'Typed by hand', '', '']); // no ID yet
   gas.sheet('Closed Days').appendRow(['Dec 25', 'Christmas']);
   gas.sheet('Closed Days').appendRow(['Someday soon', 'Reads as nothing']);
@@ -163,7 +154,7 @@ function playWeek(gas, afterStep) {
     gas.setNow(moment);
     return record(`tick ${moment}`, gas.tick());
   };
-  const save = (name, weekOf, hoursWanted, days, from, to) => post({ action: 'saveAvailability', name, weekOf, hoursWanted, slots: slotsFor(days, from, to), notes: '' });
+  const save = (name, weekOf, hoursWanted, days, hours) => post({ action: 'saveAvailability', name, weekOf, hoursWanted, dayHours: hoursEach(days, hours), notes: '' });
   const lookAround = () => {
     get({ action: 'names' });
     ['Gus', 'Ana', 'Ben', 'Cora', 'Dev', 'Max'].forEach((name) => get({ action: 'boot', name }));
@@ -180,11 +171,11 @@ function playWeek(gas, afterStep) {
   record('adminSetup', setup);
   post({ action: 'hoursAdd', name: 'Ana', date: '2026-10-28', start: '09:00', end: '11:30', note: 'Before the site went live' });
   [MON, NEXT_MON].forEach((weekOf) => {
-    save('Ana', weekOf, 8, ['Mon', 'Tue', 'Thu'], 9, 12);
-    save('Ben', weekOf, 5, ['Wed', 'Fri'], 10, 13);
-    save('Cora', weekOf, 6, ['Wed', 'Fri', 'Sat'], 8, 16);
+    save('Ana', weekOf, 8, ['Mon', 'Tue', 'Thu'], 3);
+    save('Ben', weekOf, 5, ['Wed', 'Fri'], 3);
+    save('Cora', weekOf, 6, ['Wed', 'Fri', 'Sat'], 8);
   });
-  save('Dev', MON, 5, ['Tue', 'Thu'], 13, 16);
+  save('Dev', MON, 5, ['Tue', 'Thu'], 3);
   post({ action: 'saveAvailability', name: 'Dev', weekOf: NEXT_MON, none: true, notes: 'Out of state' });
   post({ action: 'mgrOneOffAdd', code: CODE, by: 'Max', title: 'Replace the lobby light bulbs', priority: 'A', minutes: 15, weekOf: MON, day: 'Tue', who: [] });
   post({ action: 'mgrOneOffAdd', code: CODE, by: 'Mia', title: 'Wipe down the rig', priority: 'B', minutes: 30, weekOf: MON, day: '', who: [] });
@@ -194,7 +185,7 @@ function playWeek(gas, afterStep) {
   // Friday: the build, with the nightly in the same tick, then someone late.
   tick(at(LAST_FRI, '07:00'));
   gas.setNow(at(LAST_FRI, '07:30'));
-  save('Dev', MON, 6, ['Tue', 'Thu', 'Sat'], 13, 16);
+  save('Dev', MON, 6, ['Tue', 'Thu', 'Sat'], 3);
   lookAround();
 
   // Monday: Ana does her list, Cora forgets to clock out.
@@ -237,7 +228,7 @@ function playWeek(gas, afterStep) {
   // Wednesday: Ana takes a day away, a trip comes and goes, and people type into the sheet.
   tick(at(WED, '00:35'));
   gas.setNow(at(WED, '10:00'));
-  save('Ana', MON, 6, ['Mon', 'Tue'], 9, 12);
+  save('Ana', MON, 6, ['Mon', 'Tue'], 3);
   const trip = post({ action: 'timeOffAdd', name: 'Ben', from: FRI, to: FRI, note: '' });
   post({ action: 'timeOffRemove', name: 'Ben', id: trip.id });
   typeIntoTheSheet(gas);
@@ -489,9 +480,9 @@ test('reads: which numbers are dates comes from COLUMN_FORMATS_ and DATE_COLUMNS
   const gas = setUpWorld();
   const script = gas.context;
   const stamps = [['One-Offs', 'Added'], ['One-Offs', 'Done At'], ['Availability', 'Submitted At'], ['Time Off', 'Added At'], ['Schedule', 'Done At'], ['Hours', 'In'], ['Hours', 'Out'], ['Hours', 'Edited At'], ['Hours', 'Date']];
-  const dates = [['One-Offs', 'Week Of'], ['Availability', 'Week Of'], ['Time Off', 'From'], ['Time Off', 'To'], ['Schedule', 'Week Of'], ['Schedule', 'Date'], ['Schedule', 'Rolled From'], ['Shifts', 'Week Of'], ['Shifts', 'Date'], ['Closed Days', 'Date']];
+  const dates = [['One-Offs', 'Week Of'], ['Availability', 'Week Of'], ['Time Off', 'From'], ['Time Off', 'To'], ['Schedule', 'Week Of'], ['Schedule', 'Date'], ['Schedule', 'Rolled From'], ['Closed Days', 'Date']];
   stamps.concat(dates).forEach(([tab, header]) => assert.strictEqual(script.isDateLike_(tab, header), true, `${tab}: ${header}`));
-  [['Schedule', 'Minutes'], ['Hours', 'Hours'], ['Settings', 'Value'], ['Staff', 'Rank'], ['Tasks', 'Flex Days'], ['Availability', 'Hours Wanted'], ['Shifts', 'Start'], ['Staff', 'Not A Column']].forEach(([tab, header]) => {
+  [['Schedule', 'Minutes'], ['Hours', 'Hours'], ['Settings', 'Value'], ['Staff', 'Rank'], ['Tasks', 'Flex Days'], ['Availability', 'Hours Wanted'], ['Staff', 'Not A Column']].forEach(([tab, header]) => {
     assert.strictEqual(script.isDateLike_(tab, header), false, `${tab}: ${header}`);
   });
 
@@ -501,13 +492,11 @@ test('reads: which numbers are dates comes from COLUMN_FORMATS_ and DATE_COLUMNS
   assert.strictEqual(script.isDateLike_('Staff', 'Seen'), true);
 });
 
-test('reads: a plain number in a date or time column reads as a date or time, since the batch can\'t tell them apart', () => {
+test('reads: a plain number in a date column reads as a date, since the batch can\'t tell them apart', () => {
   const gas = setUpWorld();
   const row = gas.sheet('Closed Days').getLastRow() + 1;
   typeCell(gas, 'Closed Days', row, 'Date', 46336); // a date cell and a plain number both arrive as this
   assert.strictEqual(gas.call('readTab_', 'Closed Days').find((line) => line._row === row).Date, TUE);
-  typeCell(gas, 'Shifts', 2, 'Start', 3.5); // only the fraction of a day counts, and half a day is noon
-  assert.strictEqual(gas.call('readTab_', 'Shifts')[0].Start, '12:00');
 });
 
 test('reads: a number that can\'t be a date is left alone, so one bad cell can\'t break a read', () => {
@@ -544,7 +533,7 @@ function firstWeekRow(gas) {
 test('reads: first_week in a date cell still stops the weeks before it', () => {
   const outcome = bothWays((gas) => {
     typeCell(gas, 'Settings', firstWeekRow(gas), 'Value', '11/16/2026'); // Sheets makes this a date in a plain cell
-    ok(gas.post({ action: 'saveAvailability', name: 'Ana', weekOf: MON, hoursWanted: 6, slots: slotsFor(['Mon'], 9, 12), notes: '' }));
+    ok(gas.post({ action: 'saveAvailability', name: 'Ana', weekOf: MON, hoursWanted: 6, dayHours: hoursEach(['Mon'], 3), notes: '' }));
     const firstWeek = gas.call('firstWeek_');
     const oneOff = gas.post({ action: 'mgrOneOffAdd', code: CODE, by: 'Max', title: 'Too early', priority: 'B', minutes: 15, weekOf: MON, day: 'Tue', who: [] });
     const weeks = ok(gas.get({ action: 'mgrBoard', code: CODE })).weeks.map((week) => week.weekOf);
@@ -575,7 +564,7 @@ test('reads: first_week reads the same both ways however it got there, and a num
 test('reads: a date in Flex Days counts as no flex, so it can\'t move a task or send the Friday run through tens of thousands of days', () => {
   const outcome = bothWays((gas) => {
     typeCell(gas, 'Tasks', gas.rows('Tasks').find((line) => line.ID === 'T02')._row, 'Flex Days', '1-2'); // Sheets makes this January 2
-    ['Ana', 'Ben'].forEach((name) => ok(gas.post({ action: 'saveAvailability', name, weekOf: MON, hoursWanted: 8, slots: slotsFor(['Mon', 'Thu'], 9, 12), notes: '' })));
+    ['Ana', 'Ben'].forEach((name) => ok(gas.post({ action: 'saveAvailability', name, weekOf: MON, hoursWanted: 8, dayHours: hoursEach(['Mon', 'Thu'], 3), notes: '' })));
     gas.setNow(at(LAST_FRI, '07:00'));
     gas.tick();
     return {
@@ -600,7 +589,7 @@ test('reads: the Friday summary and the schedule agree about a plain number in C
   const friday = (gas) => {
     typeCell(gas, 'Closed Days', gas.sheet('Closed Days').getLastRow() + 1, 'Date', 46338); // the number for Thursday
     gas.sheet('Closed Days').appendRow(['Someday soon', 'Reads as nothing']);
-    ['Ana', 'Ben', 'Cora', 'Dev'].forEach((name) => ok(gas.post({ action: 'saveAvailability', name, weekOf: MON, hoursWanted: 8, slots: slotsFor(['Mon', 'Thu'], 9, 12), notes: '' })));
+    ['Ana', 'Ben', 'Cora', 'Dev'].forEach((name) => ok(gas.post({ action: 'saveAvailability', name, weekOf: MON, hoursWanted: 8, dayHours: hoursEach(['Mon', 'Thu'], 3), notes: '' })));
     gas.setNow(at(LAST_FRI, '07:00'));
     gas.tick();
     const summary = JSON.stringify(gas.state.mail.find((mail) => /schedule is out/.test(mail.subject)));
@@ -712,25 +701,7 @@ test('serial numbers: a time the clocks skip reads as an hour on, the way a cloc
   assert.strictEqual(gas.call('serialToDate_', serialOf(2027, 3, 14, 2, 59, 59, 999)), '2027-03-14T09:59:59.999Z');
 });
 
-test('serial numbers: times come straight from the fraction of a day', () => {
-  const gas = setUpWorld();
-  const cases = [
-    [0, '00:00'],
-    [0.375, '09:00'],
-    [545 / 1440, '09:05'], // not a clean binary fraction, so rounding has to be right
-    [0.5, '12:00'],
-    [(13 * 60 + 30) / 1440, '13:30'],
-    [1439 / 1440, '23:59'],
-    [(9 * 3600 + 5 * 60 + 59) / 86400, '09:05'], // seconds don't round the minute up, the same as a Date through denver_
-    [0.999999999999, '00:00'], // rounds up to a whole day
-    [46336.375, '09:00'], // with a date in front of it
-    [serialOf(2026, 11, 1, 1, 30), '01:30'], // and on a day the clocks change
-    [serialOf(2027, 3, 14, 3, 15), '03:15'],
-  ];
-  cases.forEach(([number, expected]) => assert.strictEqual(gas.call('fractionToTime_', number), expected, String(number)));
-});
-
-test('reads: stamps and times in the sheet read the same both ways around the clock changes', () => {
+test('reads: stamps in the sheet read the same both ways around the clock changes', () => {
   const gas = setUpWorld();
   const sheet = gas.sheet('Hours');
   const add = (day, inAt, outAt) => sheet.appendRow(['', day, 'Ana', new Date(inAt), outAt ? new Date(outAt) : '', '', '', '', '', '', '']);
@@ -742,12 +713,7 @@ test('reads: stamps and times in the sheet read the same both ways around the cl
   sheet.getRange(3, columnOf(sheet, 'Edited At')).setValue(new Date('2027-03-14T01:59:59.999-07:00'));
   gas.sheet('Time Off').appendRow(['', 'Ben', new Date(2027, 2, 14), new Date(2026, 10, 1), '', new Date('2026-11-01T00:00:00-06:00'), '']);
   typeCell(gas, 'Availability', 2, 'Submitted At', new Date('2027-03-14T03:00:00-06:00'));
-  gas.sheet('Shifts').appendRow(['2026-11-09', '2026-11-10', 'Ana', new Date(1899, 11, 30, 9, 30), new Date(1899, 11, 30, 23, 59), 60]);
-  gas.sheet('Shifts').appendRow(['2026-11-09', '2026-11-11', 'Ana', '10:15', '1:05 PM', 60]);
   assertSameAsOldWay(gas, 'around the clock changes');
-
-  const shifts = gas.call('readTab_', 'Shifts').map((row) => [row.Start, row.End]);
-  assert.deepStrictEqual(shifts, [['09:30', '23:59'], ['10:15', '01:05']], 'the times are what was typed, and plain text reads the way it always has');
 
   const springEntry = gas.call('readTab_', 'Hours').find((row) => row.Date === '2027-03-13');
   assert.strictEqual(Date.parse(springEntry.Out) - Date.parse(springEntry.In), 3 * 3600000, 'real time across the change');
@@ -988,7 +954,7 @@ test('reads: a request that fails after writing sends its writes before it lets 
   const added = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, by: 'Max', title: 'Doomed', priority: 'B', minutes: 15, weekOf: MON, day: 'Wed', who: [] }));
   const waiting = [];
   watchLock(gas, (tabs) => waiting.push(tabs));
-  gas.context.rewriteShiftsFor_ = () => {
+  gas.context.managerName_ = () => {
     throw new Error('Service Spreadsheets failed while accessing document');
   };
   const flushes = gas.state.counters.flush;
@@ -1008,7 +974,7 @@ test('reads: the next request in line sees what a failed request wrote, so its t
   const mine = after.find((row) => row._row > doomedRow && row.Name && row.Status === 'open' && after[row._row - 1] && after[row._row - 1].Name && after[row._row - 1].Name !== row.Name);
   assert.ok(mine, 'an open row below the doomed one, with someone else\'s row right under it');
 
-  gas.context.rewriteShiftsFor_ = () => {
+  gas.context.managerName_ = () => {
     throw new Error('Service Spreadsheets failed while accessing document');
   };
   // The tap is a run of its own, waiting on the lock. It starts the moment the lock is let go.
@@ -1054,7 +1020,7 @@ test('reads: a flush that fails on the way out can\'t hide what really went wron
   watchLock(gas, () => {
     released += 1;
   });
-  gas.context.rewriteShiftsFor_ = () => gas.context.fail_('A sentence for the page.');
+  gas.context.managerName_ = () => gas.context.fail_('A sentence for the page.');
   const flush = gas.context.SpreadsheetApp.flush;
   gas.context.SpreadsheetApp.flush = () => {
     throw new Error('Service Spreadsheets failed while accessing document');
@@ -1254,7 +1220,7 @@ test('failures: a renamed Log tab fails the batch, and a write still goes throug
 
 test('failures: a run tries the batch once, even across the jobs of a tick', () => {
   const gas = setUpWorld();
-  ok(gas.post({ action: 'saveAvailability', name: 'Ana', weekOf: MON, hoursWanted: 6, slots: slotsFor(['Mon'], 9, 12) }));
+  ok(gas.post({ action: 'saveAvailability', name: 'Ana', weekOf: MON, hoursWanted: 6, dayHours: hoursEach(['Mon'], 3) }));
   FAILURES['a 500'](gas);
   gas.setNow(at(LAST_FRI, '07:00'));
   const run = counted(gas, () => gas.tick());
@@ -1395,7 +1361,7 @@ test('speed: every batch asks for the same ranges, and never the whole Log or Mo
 test('speed: after setup, writing to the Log never reads what is in it', () => {
   const gas = setUpWorld();
   const run = counted(gas, () => {
-    ok(gas.post({ action: 'saveAvailability', name: 'Ana', weekOf: MON, hoursWanted: 6, slots: slotsFor(['Mon'], 9, 12) }));
+    ok(gas.post({ action: 'saveAvailability', name: 'Ana', weekOf: MON, hoursWanted: 6, dayHours: hoursEach(['Mon'], 3) }));
     gas.setNow(at(LAST_FRI, '07:00'));
     assert.deepStrictEqual(gas.tick().failed, []);
     gas.setNow(at(MON, '09:00'));

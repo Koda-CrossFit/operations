@@ -213,7 +213,7 @@ function canWorkOn_(name, date) {
   if (person.type === 'Set') return person.setDays.indexOf(dayKey_(date)) >= 0;
   if (person.type !== 'Flexible') return true;
   var availability = availabilityRow_(name, mondayOf_(date));
-  return !!availability && !availability.none && (availability.slots[dayKey_(date)] || []).length > 0;
+  return !!availability && !availability.none && availability.dayHours[dayKey_(date)] > 0;
 }
 
 /**
@@ -269,13 +269,6 @@ function nightlyRoll_() {
       });
     }
     rollRows_(rolling, rollTo, info);
-    rewriteShiftsFor_(
-      before
-        .map(function (row) {
-          return row.date;
-        })
-        .concat(rollTo)
-    );
     log_('system', 'nightly roll', missed.length + ' missed, ' + rolling.length + ' rolled to ' + rollTo);
   }
 

@@ -6,10 +6,10 @@ Staff sign in by tapping their name. Managers enter a short code once per device
 
 ## How the week works
 
-1. People with set days (type `Set`) are scheduled automatically. Everyone else (type `Flexible`) fills out availability and the hours they want.
+1. People with set days (type `Set`) are scheduled automatically. Everyone else (type `Flexible`) says how many hours they can work each day and how many hours they want for the whole week. There are no set times: staff just see their tasks by day, and pay comes from clocking in and out.
 2. **Friday at 7:00 AM** the schedule for the coming Monday to Sunday is built. Anyone who didn't submit gets an email, everyone with work gets their week, and the managers get a summary.
 3. Tasks go out by priority (A, then B, then C), and people by rank, best first, up to the hours they asked for.
-4. Anyone who submits after the deadline only gets what's left over. Nobody else's work moves. Someone who was on time stays on time when they change their answer later, unless they offer more than before (new hours, or more hours wanted).
+4. Anyone who submits after the deadline only gets what's left over. Nobody else's work moves. Someone who was on time stays on time when they change their answer later, unless they offer more than before (more hours on a day, or more hours wanted).
 5. Every night a little after 12:30 AM, unfinished work is sorted out. A daily task counts as missed. A one-off rolls to today, and so does any other task unless the same task already has a row today or tomorrow. Floors never moves: if it isn't checked off, it's marked missed where it is and the managers get an email. A forgotten clock-out gets flagged. A shift can run past midnight: an entry stays on the clock for 12 hours after clocking in, and anything older counts as a forgotten clock-out.
 6. On the 1st of each month at 7:00 AM, the managers get last month's hours.
 7. On a phone, the Today tab shows how to add the site to the home screen until the person dismisses it or opens it from the icon. Android gets a one-tap prompt when Chrome offers one. Apple gives a page no way to prompt, so an iPhone gets the steps.
@@ -26,10 +26,9 @@ Everything lives in the "Koda Operations" Google Sheet. Columns are found by the
 | Staff | Everyone, with their rank, email, type, set days and set tasks |
 | Tasks | The regular tasks: how often, priority, about how long, which days, how far they can move |
 | One-Offs | The extra tasks managers add each week |
-| Availability | One row per person per week. `Slots` is what the code reads, `Readable` is for people |
+| Availability | One row per person per week. `Hours Wanted` is the week's total. `Slots` is the hours per day that the code reads, like `Mon:3;Tue:2.5`, and `Readable` is for people, like `Mon 3 hrs; Tue 2.5 hrs` |
 | Time Off | Out-of-town dates |
 | Schedule | Every task on every day, who has it, and whether it got done |
-| Shifts | The time each flexible person is expected, worked out from the Schedule |
 | Hours | Every clock-in and clock-out |
 | Monthly Hours | Totals per person. Type any date in a month at the top |
 | Log | A line for every change anyone makes |
@@ -45,7 +44,7 @@ Edit the sheet. There's nothing to redeploy for any of this.
 
 - `Priority`: A, B or C. Plusses rank higher, so `A++` comes before `A`.
 - `Days`: `Mon, Wed, Fri`, or the word `Set` for a task only set staff do unless they're covering.
-- `Minutes`: about how long it takes. Matching, shift times and the managers' screens use it. Staff don't see it, and pay comes from clock-in and clock-out times, never from this.
+- `Minutes`: about how long it takes. Matching and the managers' screens use it. Staff don't see it, and pay comes from clock-in and clock-out times, never from this.
 - `Flex Days`: how many days a task can move from its listed day if nobody can do it then. 0 means that day or not at all.
 
 **A person:** change their row in `Staff`. Set `Active` to FALSE when someone leaves, which keeps their history.

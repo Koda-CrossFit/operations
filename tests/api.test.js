@@ -11,7 +11,7 @@ const path = require('node:path');
 
 const { createGas, fakeManagers } = require('../dev/gas-mock.js');
 const { resetWorld, createHandler } = require('../dev/server.js');
-const { MON_SAT, hours, workedExampleAvailability } = require('../dev/fixtures.js');
+const { MON_SAT, hoursEach, workedExampleAvailability } = require('../dev/fixtures.js');
 
 const CODE = '000000';
 
@@ -51,22 +51,19 @@ function world(extra) {
   return gas;
 }
 
-function save(gas, name, weekOf, hoursWanted, slots, extra) {
-  return gas.post({ action: 'saveAvailability', name, weekOf, hoursWanted, slots, ...extra });
+function save(gas, name, weekOf, hoursWanted, dayHours, extra) {
+  return gas.post({ action: 'saveAvailability', name, weekOf, hoursWanted, dayHours, ...extra });
 }
 
-function slotsFor(days, from, to) {
-  const slots = {};
-  days.forEach((day) => {
-    slots[day] = hours(from, to);
-  });
-  return slots;
+/** The minutes on this person's list that day. */
+function dayMinutes(gas, name, date) {
+  return gas.rows('Schedule').filter((row) => row.Name === name && row.Date === date).reduce((sum, row) => sum + row.Minutes, 0);
 }
 
 /** Everyone in the worked example saves on time, or only the names given. */
 function submit(gas, names, weekOf) {
   const all = workedExampleAvailability();
-  (names || Object.keys(all)).forEach((name) => ok(save(gas, name, weekOf || MON, all[name].hoursWanted, all[name].slots)));
+  (names || Object.keys(all)).forEach((name) => ok(save(gas, name, weekOf || MON, all[name].hoursWanted, all[name].dayHours)));
 }
 
 /** The real Friday 7 AM tick. */
@@ -132,17 +129,6 @@ test('the worked example comes out right through the whole stack', () => {
   const gas = built();
   assert.deepStrictEqual(minutesByPersonDay(gas), { Ana: { Mon: 125, Wed: 85, Fri: 130 }, Ben: { Tue: 100, Thu: 85 }, Cora: { Sat: 55 } });
   assert.deepStrictEqual(scheduleRows(gas).filter((row) => !row.Name), [], 'nothing uncovered');
-  assert.deepStrictEqual(
-    gas.rows('Shifts').map((shift) => [shift.Date, shift.Name, shift.Start, shift.End, shift.Minutes]),
-    [
-      [MON, 'Ana', '09:00', '11:15', 135],
-      [TUE, 'Ben', '10:00', '11:45', 105],
-      [WED, 'Ana', '09:00', '10:30', 90],
-      [THU, 'Ben', '10:00', '11:30', 90],
-      [FRI, 'Ana', '09:00', '11:15', 135],
-      [SAT, 'Cora', '08:00', '09:00', 60],
-    ]
-  );
 });
 
 test('date-string columns stay plain text in the sheet, and Hours.In is a real date', () => {
@@ -150,8 +136,6 @@ test('date-string columns stay plain text in the sheet, and Hours.In is a real d
   const row = scheduleRows(gas)[0];
   assert.strictEqual(typeof row.Date, 'string');
   assert.strictEqual(typeof row['Week Of'], 'string');
-  const shift = gas.rows('Shifts')[0];
-  ['Date', 'Week Of', 'Start', 'End'].forEach((column) => assert.strictEqual(typeof shift[column], 'string', column));
   assert.strictEqual(typeof gas.rows('Availability')[0]['Week Of'], 'string');
   assert.strictEqual(typeof gas.rows('Closed Days')[0].Date, 'string');
 
@@ -190,14 +174,14 @@ test('the sheet reads by header name, so moving columns around breaks nothing', 
 
 test('check 2: saved Thursday is on time, saved Friday 7:01 AM is late', () => {
   const gas = world();
-  assert.strictEqual(ok(save(gas, 'Ana', MON, 6, slotsFor(['Mon'], 9, 12))).late, false);
+  assert.strictEqual(ok(save(gas, 'Ana', MON, 6, hoursEach(['Mon'], 3))).late, false);
   assert.strictEqual(gas.rows('Availability')[0].Late, false);
 
   gas.setNow(at(LAST_FRI, '06:59'));
-  assert.strictEqual(ok(save(gas, 'Ben', MON, 4, slotsFor(['Tue'], 10, 13))).late, false, 'a minute before is still on time');
+  assert.strictEqual(ok(save(gas, 'Ben', MON, 4, hoursEach(['Tue'], 3))).late, false, 'a minute before is still on time');
 
   gas.setNow(at(LAST_FRI, '07:01'));
-  assert.strictEqual(ok(save(gas, 'Cora', MON, 6, slotsFor(['Sat'], 8, 16))).late, true);
+  assert.strictEqual(ok(save(gas, 'Cora', MON, 6, hoursEach(['Sat'], 8))).late, true);
   assert.strictEqual(gas.rows('Availability').find((row) => row.Name === 'Cora').Late, true);
 });
 
@@ -207,7 +191,7 @@ test('check 2: a late save after the build leaves all the work that went to on-t
   assert.deepStrictEqual(scheduleRows(gas).filter((row) => !row.Name), [], 'and nothing is left over');
 
   gas.setNow(at(LAST_FRI, '07:01'));
-  const reply = ok(save(gas, 'Ben', MON, 4, slotsFor(['Tue', 'Thu'], 10, 13))); // better ranked than Cora, and free those days
+  const reply = ok(save(gas, 'Ben', MON, 4, hoursEach(['Tue', 'Thu'], 3))); // better ranked than Cora, and free those days
   assert.strictEqual(reply.late, true);
   assert.deepStrictEqual(reply.picked, [], 'he only gets leftovers, and there are none');
   assert.deepStrictEqual(snapshotRows(gas, (row) => row.Name), namedBefore, "nobody's rows changed");
@@ -220,7 +204,7 @@ test('check 2: a late saver really does pick up what nobody else could do', () =
   assert.ok(scheduleRows(gas).some((row) => !row.Name && row.Date === TUE));
 
   gas.setNow(at(LAST_FRI, '09:00'));
-  const reply = ok(save(gas, 'Ben', MON, 4, slotsFor(['Tue', 'Thu'], 10, 13)));
+  const reply = ok(save(gas, 'Ben', MON, 4, hoursEach(['Tue', 'Thu'], 3)));
   assert.strictEqual(reply.late, true);
   assert.ok(reply.picked.includes('Unbox packages'));
 
@@ -232,7 +216,7 @@ test('check 2: a late saver really does pick up what nobody else could do', () =
     before.map((row) => [row.ID, row.Date]),
     "Ana's list is untouched"
   );
-  assert.ok(gas.rows('Shifts').some((shift) => shift.Name === 'Ben' && shift.Date === TUE), 'Ben has a shift now');
+  assert.ok(scheduleRows(gas).some((row) => row.Name === 'Ben' && row.Date === TUE), 'Ben has work now');
   assert.ok(subjects(gas).some((subject) => subject === "[TEST to Managers] Ben's availability came in late: week of Nov 9"));
   const alert = gas.state.mail.find((mail) => /came in late/.test(mail.subject));
   assert.match(alert.htmlBody, /Unbox packages/);
@@ -240,9 +224,9 @@ test('check 2: a late saver really does pick up what nobody else could do', () =
 
 test('check 2: a late save before the tick has run still sits out the main pass', () => {
   const gas = world();
-  ok(save(gas, 'Ben', MON, 4, slotsFor(['Mon'], 9, 12))); // on time, rank 6
+  ok(save(gas, 'Ben', MON, 4, hoursEach(['Mon'], 3))); // on time, rank 6
   gas.setNow(at(LAST_FRI, '07:01'));
-  assert.strictEqual(ok(save(gas, 'Ana', MON, 8, slotsFor(['Mon', 'Tue'], 9, 12))).late, true); // late, rank 5
+  assert.strictEqual(ok(save(gas, 'Ana', MON, 8, hoursEach(['Mon', 'Tue'], 3))).late, true); // late, rank 5
   gas.setNow(at(LAST_FRI, '07:05'));
   assert.deepStrictEqual(gas.tick().failed, []);
 
@@ -267,7 +251,7 @@ test('check 2: a late change releases only their future rows on days they took a
   const othersBefore = snapshotRows(gas, others);
   const fridayBefore = snapshotRows(gas, (row) => row.Name === 'Ana' && row.Date === FRI);
 
-  const reply = ok(save(gas, 'Ana', MON, 6, slotsFor(['Mon', 'Fri'], 9, 12)));
+  const reply = ok(save(gas, 'Ana', MON, 6, hoursEach(['Mon', 'Fri'], 3)));
   assert.strictEqual(reply.late, false, 'she was on time and only took hours away');
 
   assert.deepStrictEqual(snapshotRows(gas, others), othersBefore, "nobody else's work moved");
@@ -290,64 +274,88 @@ test('check 2: "can\'t work" after the deadline releases everything still ahead'
   assert.deepStrictEqual(reply.picked, []);
   assert.ok(scheduleRows(gas).some((row) => row.Name === 'Ana' && row.Date === MON), 'Monday has gone by, so it stays');
   assert.ok(!scheduleRows(gas).some((row) => row.Name === 'Ana' && row.Date >= WED), 'nothing from today on');
-  assert.ok(!gas.rows('Shifts').some((shift) => shift.Name === 'Ana' && shift.Date >= WED));
+  assert.ok(!scheduleRows(gas).some((row) => row.Name === 'Ana' && row.Date >= WED));
 });
 
 test('saveAvailability: only Flexible people, known days and hours, a real week', () => {
   const gas = world();
-  refused(save(gas, 'Gus', MON, 4, slotsFor(['Mon'], 9, 10)), /automatically/);
-  refused(save(gas, 'Max', MON, 4, slotsFor(['Mon'], 9, 10)), /automatically/);
-  refused(save(gas, 'Ana', TUE, 4, slotsFor(['Mon'], 9, 10)), /start on a Monday/);
-  refused(save(gas, 'Ana', 'next week', 4, slotsFor(['Mon'], 9, 10)), /pick a week/);
-  refused(save(gas, 'Ana', '2026-10-26', 4, slotsFor(['Mon'], 9, 10)), /already passed/);
-  refused(save(gas, 'Ana', MON, 4, { Funday: [9] }), /days/);
-  refused(save(gas, 'Ana', MON, 4, { Mon: [4] }), /between 5 AM and 9 PM/);
-  refused(save(gas, 'Ana', MON, 4, { Mon: [22] }), /between 5 AM and 9 PM/);
-  refused(save(gas, 'Ana', MON, 4, { Mon: [9.5] }), /between 5 AM and 9 PM/);
-  refused(save(gas, 'Ana', MON, 4, { Mon: 'nine' }), /hours/);
-  refused(save(gas, 'Ana', MON, 41, slotsFor(['Mon'], 9, 10)), /between 0 and 40/);
-  refused(save(gas, 'Ana', MON, -1, slotsFor(['Mon'], 9, 10)), /between 0 and 40/);
-  refused(save(gas, 'Ana', MON, 'lots', slotsFor(['Mon'], 9, 10)), /between 0 and 40/);
-  refused(save(gas, 'Ana', MON, 0, slotsFor(['Mon'], 9, 10)), /how many hours/);
-  refused(save(gas, 'Ana', MON, undefined, slotsFor(['Mon'], 9, 10)), /how many hours/);
-  refused(save(gas, 'Ana', MON, 4, {}), /at least one hour/);
+  refused(save(gas, 'Gus', MON, 4, hoursEach(['Mon'], 1)), /automatically/);
+  refused(save(gas, 'Max', MON, 4, hoursEach(['Mon'], 1)), /automatically/);
+  refused(save(gas, 'Ana', TUE, 4, hoursEach(['Mon'], 1)), /start on a Monday/);
+  refused(save(gas, 'Ana', 'next week', 4, hoursEach(['Mon'], 1)), /pick a week/);
+  refused(save(gas, 'Ana', '2026-10-26', 4, hoursEach(['Mon'], 1)), /already passed/);
+  refused(save(gas, 'Ana', MON, 4, { Funday: 3 }), /days/);
+  refused(save(gas, 'Ana', MON, 4, { Mon: -0.5 }), /between 0 and 16/);
+  refused(save(gas, 'Ana', MON, 4, { Mon: 16.5 }), /between 0 and 16/);
+  refused(save(gas, 'Ana', MON, 4, { Mon: 'nine' }), /between 0 and 16/);
+  refused(save(gas, 'Ana', MON, 4, { Mon: 2.25 }), /half-hour/);
+  refused(save(gas, 'Ana', MON, 4, { Mon: [3] }), /read those hours/);
+  refused(save(gas, 'Ana', MON, 4, { Mon: null }), /read those hours/);
+  refused(save(gas, 'Ana', MON, 4, { Mon: true }), /read those hours/);
+  refused(save(gas, 'Ana', MON, 4, { Mon: ' ' }), /read those hours/);
+  refused(save(gas, 'Ana', MON, 4, ['Mon']), /read those hours/);
+  refused(save(gas, 'Ana', MON, 4, 'Mon:3'), /read those hours/);
+  refused(save(gas, 'Ana', MON, 41, hoursEach(['Mon'], 1)), /between 0 and 40/);
+  refused(save(gas, 'Ana', MON, -1, hoursEach(['Mon'], 1)), /between 0 and 40/);
+  refused(save(gas, 'Ana', MON, 'lots', hoursEach(['Mon'], 1)), /between 0 and 40/);
+  refused(save(gas, 'Ana', MON, 0, hoursEach(['Mon'], 1)), /how many hours/);
+  refused(save(gas, 'Ana', MON, undefined, hoursEach(['Mon'], 1)), /how many hours/);
+  refused(save(gas, 'Ana', MON, 4, {}), /at least one day/);
+  refused(save(gas, 'Ana', MON, 4, undefined), /at least one day/);
+  refused(save(gas, 'Ana', MON, 4, { Mon: 0, Tue: 0 }), /at least one day/);
   assert.deepStrictEqual(gas.rows('Availability'), [], 'nothing bad was saved');
+});
+
+test('saveAvailability: the top of the range, half hours, text numbers and zero days', () => {
+  const gas = world();
+  ok(save(gas, 'Ana', MON, 40, { Mon: 16, Tue: 0.5, Wed: '2.5', Thu: 0, Fri: '0' }));
+  const row = gas.rows('Availability')[0];
+  assert.strictEqual(row.Slots, 'Mon:16;Tue:0.5;Wed:2.5', 'zero days are dropped, and days stay in week order');
+  assert.strictEqual(row.Readable, 'Mon 16 hrs; Tue 0.5 hrs; Wed 2.5 hrs');
+  assert.deepStrictEqual(ok(gas.get({ action: 'availability', name: 'Ana', weekOf: MON })).dayHours, { Mon: 16, Tue: 0.5, Wed: 2.5 });
+});
+
+test('saveAvailability: a row in the old hour-by-hour shape reads as no hours, and nothing breaks', () => {
+  const gas = world();
+  gas.sheet('Availability').appendRow([MON, 'Ana', new Date(), false, false, 6, 'Mon:9,10,11;Wed:16,17', 'Mon 9 AM-12 PM', '']);
+  assert.deepStrictEqual(ok(gas.get({ action: 'availability', name: 'Ana', weekOf: MON })).dayHours, {});
+  ok(save(gas, 'Ana', MON, 6, { Mon: 3 }));
+  assert.strictEqual(gas.rows('Availability')[0].Slots, 'Mon:3');
 });
 
 test('saveAvailability: one row per person per week, with Slots and Readable in the spec format', () => {
   const gas = world();
-  ok(save(gas, 'Ana', MON, 6.5, { Wed: [16, 17], Mon: [11, 9, 10, 10] }, { notes: 'Back door please' }));
+  ok(save(gas, 'Ana', MON, 6.5, { Wed: 2, Mon: 3 }, { notes: 'Back door please' }));
   const row = gas.rows('Availability')[0];
-  assert.strictEqual(row.Slots, 'Mon:9,10,11;Wed:16,17');
-  assert.strictEqual(row.Readable, 'Mon 9 AM-12 PM; Wed 4-6 PM');
+  assert.strictEqual(row.Slots, 'Mon:3;Wed:2');
+  assert.strictEqual(row.Readable, 'Mon 3 hrs; Wed 2 hrs');
   assert.strictEqual(row['Hours Wanted'], 6.5);
   assert.strictEqual(row.Notes, 'Back door please');
 
-  ok(save(gas, 'Ana', MON, 4, { Tue: [14, 9] }));
+  ok(save(gas, 'Ana', MON, 4, { Tue: 1 }));
   assert.strictEqual(gas.rows('Availability').length, 1, 'saving again updates the row');
-  assert.strictEqual(gas.rows('Availability')[0].Readable, 'Tue 9-10 AM, 2-3 PM');
+  assert.strictEqual(gas.rows('Availability')[0].Readable, 'Tue 1 hr');
 
   ok(gas.post({ action: 'saveAvailability', name: 'Ana', weekOf: MON, none: true }));
   const none = gas.rows('Availability')[0];
   assert.strictEqual(none.None, true);
   assert.strictEqual(none.Slots, '');
   assert.strictEqual(none['Hours Wanted'], 0);
-  ok(save(gas, 'Ana', NEXT_MON, 4, { Tue: [9] }));
+  ok(save(gas, 'Ana', NEXT_MON, 4, { Tue: 1 }));
   assert.strictEqual(gas.rows('Availability').length, 2, 'another week is another row');
 });
 
 test('availability: the response has the documented fields, and last is for Copy Last Week', () => {
   const gas = world();
-  ok(save(gas, 'Ana', MON, 6, slotsFor(['Mon'], 9, 11), { notes: 'Note' }));
+  ok(save(gas, 'Ana', MON, 6, hoursEach(['Mon'], 2), { notes: 'Note' }));
   ok(gas.post({ action: 'timeOffAdd', name: 'Ana', from: NEXT_MON, to: NEXT_MON }));
   ok(gas.post({ action: 'saveAvailability', name: 'Ana', weekOf: '2026-11-23', none: true }));
 
   const first = ok(gas.get({ action: 'availability', name: 'Ana', weekOf: MON }));
-  deepKeys(first, ['ok', 'weekOf', 'days', 'hours', 'slots', 'hoursWanted', 'none', 'notes', 'submittedAt', 'late', 'deadline', 'past', 'last'], 'availability');
+  deepKeys(first, ['ok', 'weekOf', 'days', 'dayHours', 'hoursWanted', 'none', 'notes', 'submittedAt', 'late', 'deadline', 'past', 'last'], 'availability');
   assert.deepStrictEqual(first.days[0], { key: 'Mon', date: MON, label: '9', off: false, closed: '' });
   assert.strictEqual(first.days.length, 7);
-  assert.deepStrictEqual(first.hours, hours(5, 22));
-  assert.deepStrictEqual(first.slots, { Mon: [9, 10] });
+  assert.deepStrictEqual(first.dayHours, { Mon: 2 });
   assert.strictEqual(first.hoursWanted, 6);
   assert.strictEqual(first.notes, 'Note');
   assert.strictEqual(first.submittedAt, 'Thu, Nov 5 at 10:00 AM');
@@ -356,11 +364,11 @@ test('availability: the response has the documented fields, and last is for Copy
   assert.strictEqual(first.last, null);
 
   const blank = ok(gas.get({ action: 'availability', name: 'Ana', weekOf: NEXT_MON }));
-  assert.deepStrictEqual(blank.slots, {});
+  assert.deepStrictEqual(blank.dayHours, {});
   assert.strictEqual(blank.hoursWanted, null);
   assert.strictEqual(blank.submittedAt, '');
   assert.strictEqual(blank.days[0].off, true, 'out of town that Monday');
-  assert.deepStrictEqual(blank.last, { weekOf: MON, slots: { Mon: [9, 10] }, hoursWanted: 6 });
+  assert.deepStrictEqual(blank.last, { weekOf: MON, dayHours: { Mon: 2 }, hoursWanted: 6 });
 
   const thanksgiving = ok(gas.get({ action: 'availability', name: 'Ana', weekOf: '2026-11-30' }));
   assert.strictEqual(thanksgiving.last.weekOf, MON, "skips the week she said she can't work, since there's nothing in it to copy");
@@ -388,8 +396,7 @@ test('check 3: a Set person out Thursday goes to the best-ranked person free, th
   assert.strictEqual(covered.Date, THU);
   assert.deepStrictEqual(snapshotRows(gas, (row) => row.Name === 'Gus'), otherDays, 'his other days stay');
   assert.deepStrictEqual(snapshotRows(gas, (row) => row.Name && row.ID !== setRow && row.Name !== 'Gus'), elsewhere, 'nobody else moves');
-  const benThursday = gas.rows('Shifts').find((shift) => shift.Name === 'Ben' && shift.Date === THU);
-  assert.deepStrictEqual([benThursday.End, benThursday.Minutes], ['12:30', 150], 'his shift grew');
+  assert.strictEqual(dayMinutes(gas, 'Ben', THU), 145, 'his day grew');
 
   const alert = gas.state.mail.find((mail) => /is out of town/.test(mail.subject));
   assert.strictEqual(alert.subject, '[TEST to Managers] Gus is out of town Nov 12');
@@ -399,8 +406,7 @@ test('check 3: a Set person out Thursday goes to the best-ranked person free, th
   assert.deepStrictEqual(removed.restored, [{ date: THU, title: 'Deep bathroom clean: Main and West Office' }]);
   const back = rowById(gas, setRow);
   assert.deepStrictEqual([back.Name, back.Source, back.Date, back.Day], ['Gus', 'set', THU, 'Thu']);
-  const benAfter = gas.rows('Shifts').find((shift) => shift.Name === 'Ben' && shift.Date === THU);
-  assert.deepStrictEqual([benAfter.End, benAfter.Minutes], ['11:30', 90], 'his shift went back');
+  assert.strictEqual(dayMinutes(gas, 'Ben', THU), 85, 'his day went back');
   assert.strictEqual(gas.rows('Time Off')[0].Status, 'cancelled');
 
   ok(gas.post({ action: 'timeOffRemove', name: 'Gus', id: added.id })); // a repeat tap changes nothing
@@ -578,14 +584,15 @@ test('check 4: the emails say what section 10 says', () => {
 
   const week = byPrefix('[TEST to Ana]');
   assert.match(week.htmlBody, /Hi Ana/);
-  assert.match(week.htmlBody, /Mon, Nov 9, 9:00 AM - 11:15 AM/);
+  assert.match(week.htmlBody, /Mon, Nov 9</, 'the day, with no time');
+  assert.doesNotMatch(week.htmlBody, /\d:\d\d (AM|PM)/, 'no times anywhere');
   assert.match(week.htmlBody, /Unbox packages/);
   assert.match(week.htmlBody, /Remember to clock in and out\./);
   assert.match(week.htmlBody, /Open Koda Operations/);
   assert.match(week.htmlBody, /\?me=Ana&amp;tab=today/);
 
   const setWeek = byPrefix('[TEST to Gus]');
-  assert.match(setWeek.htmlBody, /Thu, Nov 12</, 'set staff have a day with no time');
+  assert.match(setWeek.htmlBody, /Thu, Nov 12</);
   assert.match(setWeek.htmlBody, /Deep bathroom clean/);
 
   const nothing = byPrefix('[TEST to Dev]');
@@ -661,9 +668,9 @@ test('check 4: a crash in the build resumes without making a row twice', () => {
   const expected = snapshotRows(clean, () => true);
 
   const gas = fridayWorld();
-  const realRewrite = gas.context.rewriteShifts_;
-  gas.context.rewriteShifts_ = () => {
-    gas.context.rewriteShifts_ = realRewrite;
+  const realMark = gas.context.markBuilt_;
+  gas.context.markBuilt_ = () => {
+    gas.context.markBuilt_ = realMark;
     throw new Error('Crash after the rows went in');
   };
   gas.setNow(DEADLINE);
@@ -674,7 +681,6 @@ test('check 4: a crash in the build resumes without making a row twice', () => {
   gas.setNow(at(LAST_FRI, '07:05'));
   assert.deepStrictEqual(gas.tick().failed, []);
   assert.deepStrictEqual(snapshotRows(gas, () => true), expected);
-  assert.strictEqual(gas.rows('Shifts').length, clean.rows('Shifts').length);
   assert.deepStrictEqual(subjects(gas).filter((subject) => !/job failed/.test(subject)), FRIDAY_SUBJECTS);
 });
 
@@ -750,7 +756,7 @@ test('check 5: while not live, every email goes only to test_email, marked with 
   ok(gas.post({ action: 'timeOffAdd', name: 'Gus', from: THU, to: THU }));
   ok(gas.post({ action: 'mgrRemind', code: CODE, weekOf: NEXT_MON }));
   gas.setNow(at('2026-11-10', '09:00'));
-  ok(save(gas, 'Cora', MON, 6, slotsFor(['Sat'], 8, 16)));
+  ok(save(gas, 'Cora', MON, 6, hoursEach(['Sat'], 8)));
   assert.ok(gas.state.mail.length > FRIDAY_SUBJECTS.length);
   gas.state.mail.forEach((mail) => {
     assert.strictEqual(mail.to, 'test@example.com');
@@ -1100,7 +1106,7 @@ test('check 7: Thanksgiving closed: no rows that day, no Thursday set row, movab
   const gas = world();
   const THANKSGIVING = '2026-11-26';
   gas.setNow(at('2026-11-19', '10:00'));
-  ok(save(gas, 'Cora', '2026-11-23', 20, slotsFor(MON_SAT, 8, 16)));
+  ok(save(gas, 'Cora', '2026-11-23', 20, hoursEach(MON_SAT, 8)));
   gas.setNow(at('2026-11-20', '07:00'));
   assert.deepStrictEqual(gas.tick().failed, []);
 
@@ -1113,7 +1119,7 @@ test('check 7: Thanksgiving closed: no rows that day, no Thursday set row, movab
   const office = rows.find((row) => row.ID === `task|T10|${THANKSGIVING}`);
   assert.strictEqual(office.Date, '2026-11-27', 'movable tasks shift');
   assert.strictEqual(office.Name, 'Cora');
-  assert.ok(!gas.rows('Shifts').some((shift) => shift.Date === THANKSGIVING));
+  assert.ok(!scheduleRows(gas).some((row) => row.Date === THANKSGIVING));
 
   gas.setNow(at(THANKSGIVING, '09:00'));
   const boot = ok(gas.get({ action: 'boot', name: 'Cora' }));
@@ -1130,7 +1136,7 @@ test('check 7: Thanksgiving closed: no rows that day, no Thursday set row, movab
 test('check 7: nothing can be put on a closed day by hand, and rolled work skips over it', () => {
   const gas = world();
   gas.setNow(at('2026-11-19', '10:00'));
-  ok(save(gas, 'Cora', '2026-11-23', 20, slotsFor(MON_SAT, 8, 16)));
+  ok(save(gas, 'Cora', '2026-11-23', 20, hoursEach(MON_SAT, 8)));
   gas.setNow(at('2026-11-20', '07:00'));
   gas.tick();
   gas.setNow(at('2026-11-24', '09:00'));
@@ -1179,7 +1185,7 @@ test('check 8: every other place a person can type is safe too', () => {
   };
 
   gas.setNow(at(MON, '09:00'));
-  ok(save(gas, 'Ana', NEXT_MON, 4, { Mon: [9] }, { notes: '=1+1' }));
+  ok(save(gas, 'Ana', NEXT_MON, 4, { Mon: 1 }, { notes: '=1+1' }));
   ok(gas.post({ action: 'timeOffAdd', name: 'Ana', from: '2026-12-01', to: '2026-12-01', note: '+1 303 555 0100' }));
   ok(gas.post({ action: 'hoursAdd', name: 'Ana', date: '2026-11-02', start: '09:00', end: '10:00', note: '@home' }));
   const clock = ok(gas.post({ action: 'clockIn', name: 'Ana' }));
@@ -1222,7 +1228,7 @@ test('length limits: titles 120, details and notes 500', () => {
   const added = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: long, details: long, weekOf: MON, minutes: 15 }));
   assert.strictEqual(added.oneOff.title.length, 120);
   assert.strictEqual(added.oneOff.details.length, 500);
-  ok(save(gas, 'Ana', NEXT_MON, 4, { Mon: [9] }, { notes: long }));
+  ok(save(gas, 'Ana', NEXT_MON, 4, { Mon: 1 }, { notes: long }));
   assert.strictEqual(gas.rows('Availability').find((row) => row['Week Of'] === NEXT_MON).Notes.length, 500);
 });
 
@@ -1246,7 +1252,7 @@ test('check 9: staff responses have no email addresses and no one else\'s hours'
     gas.get({ action: 'boot', name: 'Gus' }),
     gas.get({ action: 'boot', name: 'Max' }),
     gas.get({ action: 'availability', name: 'Ana', weekOf: MON }),
-    gas.post({ action: 'saveAvailability', name: 'Ana', weekOf: NEXT_MON, hoursWanted: 4, slots: { Mon: [9] } }),
+    gas.post({ action: 'saveAvailability', name: 'Ana', weekOf: NEXT_MON, hoursWanted: 4, dayHours: { Mon: 1 } }),
     gas.post({ action: 'timeOffAdd', name: 'Ana', from: WED, to: WED }),
     gas.post({ action: 'taskToggle', name: 'Ana', id: `task|T01|${MON}`, done: true }),
     gas.post({ action: 'taskNote', name: 'Ana', id: `task|T01|${MON}`, note: 'Fine' }),
@@ -1372,7 +1378,7 @@ test('every write leaves a line in the Log tab', () => {
   const id = `task|T01|${MON}`;
   const count = () => gas.rows('Log').length;
   const steps = [
-    { action: 'saveAvailability', name: 'Ana', weekOf: NEXT_MON, hoursWanted: 4, slots: { Mon: [9] } },
+    { action: 'saveAvailability', name: 'Ana', weekOf: NEXT_MON, hoursWanted: 4, dayHours: { Mon: 1 } },
     { action: 'timeOffAdd', name: 'Dev', from: '2026-12-01', to: '2026-12-01' },
     { action: 'taskToggle', name: 'Ana', id, done: true },
     { action: 'taskNote', name: 'Ana', id, note: 'Noted' },
@@ -1455,7 +1461,7 @@ test('taskClaim: only an uncovered row dated today, and nobody can take it twice
 
 test('tasks sort top priority first and then in task order, and a task knows its kind', () => {
   const gas = world();
-  ok(save(gas, 'Cora', MON, 20, slotsFor(['Tue'], 8, 16)));
+  ok(save(gas, 'Cora', MON, 20, hoursEach(['Tue'], 8)));
   ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Urgent thing', priority: 'A', minutes: 15, weekOf: MON, day: 'Tue', who: ['Cora'] }));
   ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Not so urgent', priority: 'C', minutes: 15, weekOf: MON, day: 'Tue', who: ['Cora'] }));
   friday(gas);
@@ -1480,13 +1486,12 @@ test('tasks sort top priority first and then in task order, and a task knows its
 test('a one-off added to a published week is placed right away', () => {
   const gas = built();
   gas.setNow(at(MON, '10:00'));
-  const shiftBefore = gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === WED);
+  const minutesBefore = dayMinutes(gas, 'Ana', WED);
   const added = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Oil the rower chains', details: 'All six', priority: 'A', minutes: 30, weekOf: MON, day: 'Wed', who: [], by: 'Max' }));
   assert.deepStrictEqual(added.placed, { name: 'Ana', date: WED });
   const row = rowById(gas, `oneoff|${added.id}`);
   assert.deepStrictEqual([row.Name, row.Date, row.Day, row['One-Off ID'], row.Task, row.Details, row.Priority, row.Minutes, row.Status], ['Ana', WED, 'Wed', added.id, 'Oil the rower chains', 'All six', 'A', 30, 'open']);
-  const shiftAfter = gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === WED);
-  assert.ok(shiftAfter.Minutes > shiftBefore.Minutes, 'her shift grew to fit it');
+  assert.strictEqual(dayMinutes(gas, 'Ana', WED), minutesBefore + 30, 'her day grew to fit it');
 
   const line = gas.rows('One-Offs').find((item) => item.ID === added.id);
   assert.deepStrictEqual([line['Added By'], line['Week Of'], line.Day, line.Status], ['Max', MON, 'Wed', 'open']);
@@ -1562,13 +1567,13 @@ test('mgrOneOffEdit: updates the one-off and its open row, and moves it when the
   assert.deepStrictEqual([row.Task, row.Details, row.Priority, row.Minutes, row.Name, row.Date], ['Clean all the mirrors', 'Lobby too', 'A', 30, 'Ana', WED]);
   const line = gas.rows('One-Offs').find((item) => item.ID === added.id);
   assert.deepStrictEqual([line.Task, line.Priority, line.Minutes], ['Clean all the mirrors', 'A', 30]);
-  assert.strictEqual(gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === WED).Minutes, 120, 'the shift follows the new length');
+  assert.strictEqual(dayMinutes(gas, 'Ana', WED), 115, 'her day follows the new length');
 
   const moved = ok(gas.post({ action: 'mgrOneOffEdit', code: CODE, id: added.id, day: 'Sat', who: ['Cora'] }));
   assert.deepStrictEqual(moved.placed, { name: 'Cora', date: SAT });
   row = rowById(gas, id);
   assert.deepStrictEqual([row.Name, row.Date, row.Day], ['Cora', SAT, 'Sat']);
-  assert.strictEqual(gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === WED).Minutes, 90, 'and she gets that time back');
+  assert.strictEqual(dayMinutes(gas, 'Ana', WED), 85, 'and she gets that time back');
 
   // Moved into an unpublished week: the row comes off and it waits for that Friday.
   const waiting = ok(gas.post({ action: 'mgrOneOffEdit', code: CODE, id: added.id, weekOf: NEXT_MON }));
@@ -1586,12 +1591,12 @@ test('mgrOneOffDelete: status deleted, open rows removed, done rows kept', () =>
   const open = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Going away', weekOf: MON, day: 'Wed', minutes: 30 }));
   const done = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Already done', weekOf: MON, day: 'Mon', who: ['Cora'], minutes: 15 }));
   ok(gas.post({ action: 'taskToggle', name: 'Cora', id: `oneoff|${done.id}`, done: true }));
-  const wedBefore = gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === WED).Minutes;
+  const wedBefore = dayMinutes(gas, 'Ana', WED);
 
   ok(gas.post({ action: 'mgrOneOffDelete', code: CODE, id: open.id }));
   assert.strictEqual(gas.rows('One-Offs').find((line) => line.ID === open.id).Status, 'deleted');
   assert.ok(!scheduleRows(gas).some((row) => row.ID === `oneoff|${open.id}`));
-  assert.ok(gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === WED).Minutes < wedBefore);
+  assert.ok(dayMinutes(gas, 'Ana', WED) < wedBefore);
 
   ok(gas.post({ action: 'mgrOneOffDelete', code: CODE, id: done.id }));
   assert.strictEqual(rowById(gas, `oneoff|${done.id}`).Status, 'done', 'what got done stays on the record');
@@ -1604,19 +1609,18 @@ test('mgrOneOffDelete: status deleted, open rows removed, done rows kept', () =>
 
 /* -------------------------------------------------------- manager assign and rebuild ---- */
 
-test('mgrAssign: moves a row, marks it manual, and rewrites the shifts on both sides', () => {
+test('mgrAssign: moves a row, marks it manual, and the minutes follow on both sides', () => {
   const gas = built();
   gas.setNow(at(MON, '10:00'));
   const id = `task|T10|${MON}`; // 30 minutes on Ana's Monday
-  const anaBefore = gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === MON).Minutes;
+  const anaBefore = dayMinutes(gas, 'Ana', MON);
   const reply = ok(gas.post({ action: 'mgrAssign', code: CODE, id, name: 'Cora', date: TUE, by: 'Max' }));
   assert.strictEqual(reply.task.id, id);
   assert.strictEqual(reply.task.source, 'manual');
   const row = rowById(gas, id);
   assert.deepStrictEqual([row.Name, row.Date, row.Day, row.Source, row['Week Of']], ['Cora', TUE, 'Tue', 'manual', MON]);
-  assert.ok(gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === MON).Minutes < anaBefore);
-  const cora = gas.rows('Shifts').find((shift) => shift.Name === 'Cora' && shift.Date === TUE);
-  assert.deepStrictEqual([cora.Start, cora.End, cora.Minutes], ['08:00', '08:30', 30]);
+  assert.ok(dayMinutes(gas, 'Ana', MON) < anaBefore);
+  assert.strictEqual(dayMinutes(gas, 'Cora', TUE), row.Minutes);
 
   // Keeps its date when none is given, and an uncovered row gets a person.
   const same = ok(gas.post({ action: 'mgrAssign', code: CODE, id: `task|T01|${WED}`, name: 'Cora' }));
@@ -1675,13 +1679,13 @@ test('mgrRebuild: fills what is uncovered today, keeps done one-offs, and follow
   const added = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Rework this', weekOf: MON, minutes: 15 }));
   assert.strictEqual(added.placed.name, '');
   // Hand-edited into the sheet, so nothing has matched it yet.
-  gas.sheet('Availability').appendRow([MON, 'Cora', new Date(), false, false, 20, 'Mon:8,9,10,11,12,13,14,15;Sat:8,9,10,11,12,13,14,15', 'Mon 8 AM-4 PM; Sat 8 AM-4 PM', '']);
+  gas.sheet('Availability').appendRow([MON, 'Cora', new Date(), false, false, 20, 'Mon:8;Sat:8', 'Mon 8 hrs; Sat 8 hrs', '']);
   const reply = ok(gas.post({ action: 'mgrRebuild', code: CODE, weekOf: MON }));
   assert.ok(reply.unfilled > 0);
   assert.strictEqual(rowById(gas, `task|T01|${MON}`).Name, 'Cora', 'uncovered today gets filled');
   assert.strictEqual(rowById(gas, `task|T01|${SAT}`).Name, 'Cora');
   assert.strictEqual(rowById(gas, `oneoff|${added.id}`).Name, 'Cora', 'and so does the one-off');
-  assert.ok(gas.rows('Shifts').some((shift) => shift.Name === 'Cora' && shift.Date === SAT));
+  assert.ok(scheduleRows(gas).some((row) => row.Name === 'Cora' && row.Date === SAT));
 });
 
 test('mgrRebuild: a row moved by hand into another week is not made again in its old week', () => {
@@ -1783,9 +1787,8 @@ test('nightly roll: daily missed, a task with a row today or tomorrow missed, ot
   assert.deepStrictEqual([next.Status, next.Source, next['Rolled From']], ['open', 'carry', MON]);
   assert.notStrictEqual(next.Date, MON);
 
-  const benTuesday = gas.rows('Shifts').find((shift) => shift.Name === 'Ben' && shift.Date === TUE);
-  assert.ok(benTuesday.Minutes > 105, 'shifts are rewritten for what rolled');
-  assert.ok(gas.rows('Shifts').some((shift) => shift.Name === 'Cora' && shift.Date === TUE));
+  assert.ok(dayMinutes(gas, 'Ben', TUE) > 100, 'his day holds what rolled');
+  assert.ok(scheduleRows(gas).some((row) => row.Name === 'Cora' && row.Date === TUE));
 
   const again = ok(gas.get({ action: 'boot', name: 'Ben' }));
   assert.ok(again.today.tasks.find((task) => task.id === `task|T10|${MON}`).rolled);
@@ -1911,7 +1914,7 @@ test('a week on hold: no run at the deadline, nobody late, and it builds when a 
   assert.deepStrictEqual([week.held, week.past, week.deadline], [true, false, 'as soon as you can']);
   refused(gas.post({ action: 'mgrRebuild', code: CODE, weekOf: MON }), /on hold/);
 
-  const saved = ok(save(gas, 'Cora', MON, 6, slotsFor(['Tue', 'Thu'], 9, 13)));
+  const saved = ok(save(gas, 'Cora', MON, 6, hoursEach(['Tue', 'Thu'], 4)));
   assert.strictEqual(saved.late, false, 'after 7 AM, and still on time');
   assert.strictEqual(gas.rows('Availability').find((row) => row.Name === 'Cora').Late, false);
 
@@ -2014,7 +2017,7 @@ test('nightly roll: a one-off left over at the end of a week moves into the next
   const gas = built();
   gas.setNow(at(SAT, '09:00'));
   const added = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Over the weekend', minutes: 15, weekOf: MON, day: 'Sat', who: ['Cora'] }));
-  ok(save(gas, 'Cora', NEXT_MON, 20, slotsFor(['Mon'], 8, 16)));
+  ok(save(gas, 'Cora', NEXT_MON, 20, hoursEach(['Mon'], 8)));
   gas.setNow(at('2026-11-13', '07:00')); // the next Friday run had already happened by Saturday
   gas.call('runWeekBuild_', NEXT_MON);
   gas.setNow(at(SUN, '00:35')); // nothing on Sunday for her, so it waits there uncovered
@@ -2144,7 +2147,7 @@ test('mgrBoard: has the documented shape and the right numbers', () => {
   ok(gas.post({ action: 'taskToggle', name: 'Ana', id: `task|T01|${MON}`, done: true }));
   ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Listed here', weekOf: MON, minutes: 15, by: 'Max' }));
   ok(gas.post({ action: 'timeOffAdd', name: 'Gus', from: SUN, to: SUN }));
-  ok(save(gas, 'Ana', NEXT_MON, 4, { Mon: [9] }));
+  ok(save(gas, 'Ana', NEXT_MON, 4, { Mon: 1 }));
 
   const board = ok(gas.get({ action: 'mgrBoard', code: CODE }));
   deepKeys(board, ['ok', 'weekOf', 'label', 'published', 'builtAt', 'weeks', 'onClock', 'days', 'people', 'nextWeek', 'oneOffs', 'staffNames'], 'mgrBoard');
@@ -2161,8 +2164,7 @@ test('mgrBoard: has the documented shape and the right numbers', () => {
   deepKeys(monday, ['date', 'label', 'closed', 'groups', 'uncovered', 'extras'], 'board day');
   assert.strictEqual(monday.label, 'Mon, Nov 9');
   assert.deepStrictEqual(monday.groups.map((group) => group.name), ['Ana']);
-  deepKeys(monday.groups[0], ['name', 'shift', 'tasks'], 'board group');
-  assert.deepStrictEqual(monday.groups[0].shift, { start: '9:00 AM', end: '11:30 AM' });
+  deepKeys(monday.groups[0], ['name', 'tasks'], 'board group');
   const doneTask = monday.groups[0].tasks.find((task) => task.id === `task|T01|${MON}`);
   assert.strictEqual(doneTask.doneBy, 'Ana');
   assert.strictEqual(doneTask.done, true);
@@ -2232,7 +2234,6 @@ test('mgrHours: per person totals, issues, months, and it matches the sheet\'s r
 
 const TASK_KEYS = ['id', 'title', 'details', 'priority', 'top', 'done', 'doneAt', 'note', 'date', 'kind', 'rolled'];
 const ENTRY_KEYS = ['id', 'date', 'dayLabel', 'in', 'out', 'hours', 'flag', 'note'];
-const SHIFT_KEYS = ['start', 'end'];
 
 function checkWeek(week, label) {
   deepKeys(week, ['weekOf', 'label', 'published', 'days'], label);
@@ -2240,8 +2241,7 @@ function checkWeek(week, label) {
   assert.strictEqual(typeof week.published, 'boolean');
   assert.strictEqual(week.days.length, 7);
   week.days.forEach((day) => {
-    deepKeys(day, ['date', 'label', 'shift', 'tasks', 'off', 'closed'], `${label} day`);
-    if (day.shift) deepKeys(day.shift, SHIFT_KEYS, 'week shift');
+    deepKeys(day, ['date', 'label', 'tasks', 'off', 'closed'], `${label} day`);
     day.tasks.forEach((task) => deepKeys(task, TASK_KEYS, 'week task'));
     assert.strictEqual(typeof day.off, 'boolean');
     assert.strictEqual(typeof day.closed, 'string');
@@ -2252,9 +2252,8 @@ function checkBootShape(boot) {
   deepKeys(boot, ['ok', 'now', 'me', 'today', 'clock', 'week', 'availability', 'timeOff', 'hours'], 'boot');
   deepKeys(boot.now, ['iso', 'date', 'day', 'label', 'hour', 'minute'], 'now');
   deepKeys(boot.me, ['name', 'type', 'setDays', 'manager'], 'me');
-  deepKeys(boot.today, ['date', 'closed', 'shift', 'tasks', 'openTasks', 'next', 'extras'], 'today');
-  if (boot.today.shift) deepKeys(boot.today.shift, SHIFT_KEYS, 'shift');
-  if (boot.today.next) deepKeys(boot.today.next, ['date', 'label', 'start', 'count'], 'next');
+  deepKeys(boot.today, ['date', 'closed', 'tasks', 'openTasks', 'next', 'extras'], 'today');
+  if (boot.today.next) deepKeys(boot.today.next, ['date', 'label', 'count'], 'next');
   boot.today.tasks.concat(boot.today.openTasks).forEach((task) => deepKeys(task, TASK_KEYS, 'task'));
   deepKeys(boot.clock, ['status', 'entry', 'stale'], 'clock');
   if (boot.clock.entry) deepKeys(boot.clock.entry, ENTRY_KEYS, 'clock entry');
@@ -2272,7 +2271,7 @@ function checkBootShape(boot) {
 
 test('boot shape matches section 8 exactly, with values in the documented forms', () => {
   const gas = built();
-  ok(save(gas, 'Ana', NEXT_MON, 6, { Mon: [9] }));
+  ok(save(gas, 'Ana', NEXT_MON, 6, { Mon: 1 }));
   gas.setNow(at(MON, '09:02'));
   ok(gas.post({ action: 'clockIn', name: 'Ana' }));
   ok(gas.post({ action: 'taskToggle', name: 'Ana', id: `task|T05|${MON}`, done: true }));
@@ -2285,8 +2284,7 @@ test('boot shape matches section 8 exactly, with values in the documented forms'
   assert.deepStrictEqual(boot.me, { name: 'Ana', type: 'Flexible', setDays: [], manager: false });
   assert.strictEqual(boot.today.date, MON);
   assert.strictEqual(boot.today.closed, '');
-  assert.deepStrictEqual(boot.today.shift, { start: '9:00 AM', end: '11:15 AM' });
-  assert.deepStrictEqual(boot.today.next, { date: WED, label: 'Wed, Nov 11', start: '9:00 AM', count: 7 });
+  assert.deepStrictEqual(boot.today.next, { date: WED, label: 'Wed, Nov 11', count: 7 });
 
   const task = boot.today.tasks.find((candidate) => candidate.id === `task|T05|${MON}`);
   assert.deepStrictEqual(task, {
@@ -2328,8 +2326,7 @@ test('boot shape: the same for set staff, managers, and every other state', () =
   ['Ana', 'Ben', 'Cora', 'Dev', 'Gus', 'Hal', 'Ivy', 'Jo', 'Max', 'Mia'].forEach((name) => checkBootShape(ok(gas.get({ action: 'boot', name }))));
   const gus = ok(gas.get({ action: 'boot', name: 'Gus' }));
   assert.deepStrictEqual(gus.me, { name: 'Gus', type: 'Set', setDays: ['Thu', 'Fri', 'Sun'], manager: false });
-  assert.strictEqual(gus.today.shift, null, 'set staff get no shift times');
-  assert.deepStrictEqual(gus.today.next, { date: FRI, label: 'Fri, Nov 13', start: '', count: 1 }, 'out Thursday, so Friday is next');
+  assert.deepStrictEqual(gus.today.next, { date: FRI, label: 'Fri, Nov 13', count: 1 }, 'out Thursday, so Friday is next');
   assert.strictEqual(ok(gas.get({ action: 'boot', name: 'Max' })).me.manager, true);
   const cora = ok(gas.get({ action: 'boot', name: 'Cora' }));
   assert.deepStrictEqual(cora.clock.stale.map((entry) => entry.flag), ['missing']);
@@ -2363,7 +2360,7 @@ test('availability weeks: a Saturday sees the coming week as past due, and Monda
 test('setup: lays out every tab, with frozen bold headers and the seed data', () => {
   const gas = world();
   const book = gas.book();
-  const expected = ['Staff', 'Tasks', 'One-Offs', 'Availability', 'Time Off', 'Schedule', 'Shifts', 'Hours', 'Monthly Hours', 'Log', 'Settings', 'Closed Days', 'Extra Work'];
+  const expected = ['Staff', 'Tasks', 'One-Offs', 'Availability', 'Time Off', 'Schedule', 'Hours', 'Monthly Hours', 'Log', 'Settings', 'Closed Days', 'Extra Work'];
   assert.deepStrictEqual(book.getSheets().map((sheet) => sheet.getName()).sort(), expected.slice().sort());
   assert.strictEqual(book.getSheetByName('Sheet1'), null, 'the blank first tab is gone');
   assert.strictEqual(book.getSpreadsheetTimeZone(), 'America/Denver');
@@ -2467,7 +2464,7 @@ test('setup: running it again wipes nothing and duplicates nothing', () => {
   const task = gas.rows('Tasks').find((row) => row.ID === 'T01');
   gas.sheet('Tasks').getRange(task._row, 2).setValue('Unbox the packages');
   gas.sheet('Monthly Hours').getRange(1, 2).setValue(new Date(2026, 0, 1));
-  const counts = () => Object.fromEntries(['Staff', 'Tasks', 'Availability', 'Schedule', 'Shifts', 'Hours', 'Settings', 'Closed Days'].map((tab) => [tab, gas.rows(tab).length]));
+  const counts = () => Object.fromEntries(['Staff', 'Tasks', 'Availability', 'Schedule', 'Hours', 'Settings', 'Closed Days'].map((tab) => [tab, gas.rows(tab).length]));
   const before = counts();
   const scheduleBefore = snapshotRows(gas, () => true);
   const triggersBefore = gas.state.triggers.length;
@@ -2593,7 +2590,7 @@ test('text that looks like a date, time, number or true/false stays exactly as t
   const added = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: '12/25', details: '10:30', weekOf: MON, day: 'Mon', minutes: 5, who: ['Cora'] }));
   assert.deepStrictEqual([added.oneOff.title, added.oneOff.details], ['12/25', '10:30']);
   assert.strictEqual(rowById(gas, `oneoff|${added.id}`).Task, '12/25');
-  ok(save(gas, 'Ana', NEXT_MON, 4, { Mon: [9] }, { notes: '3/4' }));
+  ok(save(gas, 'Ana', NEXT_MON, 4, { Mon: 1 }, { notes: '3/4' }));
   assert.strictEqual(ok(gas.get({ action: 'availability', name: 'Ana', weekOf: NEXT_MON })).notes, '3/4');
   ok(gas.post({ action: 'hoursAdd', name: 'Ana', date: '2026-11-02', start: '09:00', end: '10:00', note: '10:30' }));
   assert.strictEqual(gas.rows('Hours')[0].Note, '10:30');
@@ -2604,7 +2601,7 @@ test('text that looks like a date, time, number or true/false stays exactly as t
 test('a full sheet grows when it has to, and emptying a tab of every row works', () => {
   const gas = built();
   // Shrink these tabs to exactly what's in them, as if someone tidied up the spare rows by hand.
-  ['Schedule', 'Shifts', 'Log', 'Hours'].forEach((tab) => {
+  ['Schedule', 'Log', 'Hours'].forEach((tab) => {
     const sheet = gas.sheet(tab);
     sheet.maxRows = Math.max(sheet.getLastRow(), 2);
   });
@@ -2615,14 +2612,14 @@ test('a full sheet grows when it has to, and emptying a tab of every row works',
   ok(gas.post({ action: 'mgrRebuild', code: CODE, weekOf: MON }));
 
   const empty = world();
-  ok(save(empty, 'Ana', MON, 6, slotsFor(['Mon'], 9, 12)));
+  ok(save(empty, 'Ana', MON, 6, hoursEach(['Mon'], 3)));
   friday(empty);
-  const shifts = empty.sheet('Shifts');
-  assert.strictEqual(shifts.getLastRow() - 1, 1, 'Ana has one shift');
-  shifts.maxRows = 2; // the header and that one row, so deleting it would delete every unfrozen row
-  empty.setNow(at(MON, '06:00'));
-  ok(empty.post({ action: 'saveAvailability', name: 'Ana', weekOf: MON, none: true }));
-  assert.strictEqual(shifts.getLastRow(), 1, 'all gone, and no error');
+  const schedule = empty.sheet('Schedule');
+  const everyRow = scheduleRows(empty).map((row) => row._row);
+  assert.ok(everyRow.length > 1);
+  schedule.maxRows = schedule.getLastRow(); // nothing spare, so deleting them all would delete every unfrozen row
+  empty.call('deleteRows_', 'Schedule', everyRow);
+  assert.strictEqual(schedule.getLastRow(), 1, 'all gone, and no error');
 });
 
 test('rows typed into the sheet by hand still count', () => {
@@ -2684,38 +2681,52 @@ test('an oversized one-off goes partial on the row, stays whole on the one-off, 
   assert.strictEqual(rolled['Rolled From'], partial.Date);
 });
 
-test('out of town starting today: today\'s rows are released, and blocks already over do not count', () => {
+test('out of town starting today: today\'s rows are released, and the time of day has no say in who covers', () => {
   const gas = built();
-  gas.setNow(at(THU, '13:30')); // Ben's Thursday block ended at 1 PM, and Cora's runs until 4
+  gas.setNow(at(THU, '21:30'));
   const added = ok(gas.post({ action: 'timeOffAdd', name: 'Gus', from: THU, to: THU }));
-  assert.deepStrictEqual(added.affected, [{ date: THU, title: 'Deep bathroom clean: Main and West Office', coveredBy: 'Cora' }], 'Ben is better ranked, but his block is over');
-  assert.ok(gas.rows('Shifts').some((shift) => shift.Name === 'Cora' && shift.Date === THU), 'she has a shift now');
+  assert.deepStrictEqual(added.affected, [{ date: THU, title: 'Deep bathroom clean: Main and West Office', coveredBy: 'Ben' }], 'Ben is best ranked with room, however late it is');
+  assert.strictEqual(dayMinutes(gas, 'Ben', THU), 145);
   ok(gas.post({ action: 'timeOffRemove', name: 'Gus', id: added.id }));
-  assert.ok(!gas.rows('Shifts').some((shift) => shift.Name === 'Cora' && shift.Date === THU), 'and now she does not');
+  assert.strictEqual(dayMinutes(gas, 'Ben', THU), 85, 'and it goes back');
+});
+
+test('capacity is the hours for the day: already having work that day comes off, whatever the clock says', () => {
+  const gas = world();
+  ok(save(gas, 'Ana', MON, 40, { Thu: 2 }));
+  ok(save(gas, 'Ben', MON, 40, { Thu: 8 }));
+  friday(gas);
+  gas.setNow(at(THU, '23:00'));
+  const anaHas = dayMinutes(gas, 'Ana', THU);
+  assert.ok(anaHas <= 120);
+  const fits = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Just fits', weekOf: MON, day: 'Thu', minutes: 120 - anaHas }));
+  assert.strictEqual(fits.placed.name, 'Ana', 'what is left of her two hours');
+  const over = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Too big for her', weekOf: MON, day: 'Thu', minutes: 15 }));
+  assert.strictEqual(over.placed.name, 'Ben', 'her day is full, so it goes to Ben');
 });
 
 test('out of town: a row that moved to another day to be covered goes back to its own day afterward', () => {
   const gas = world();
-  ok(save(gas, 'Ana', MON, 8, slotsFor(['Wed'], 8, 14))); // T08 Thursday has a flex day, and Wednesday is the only day anyone offered
+  ok(save(gas, 'Ana', MON, 8, hoursEach(['Wed'], 6))); // T08 Thursday has a flex day, and Wednesday is the only day anyone offered
   friday(gas);
   gas.setNow(at(MON, '10:00'));
   const added = ok(gas.post({ action: 'timeOffAdd', name: 'Gus', from: THU, to: THU }));
   assert.deepStrictEqual(added.affected.map((item) => [item.date, item.coveredBy]), [[WED, 'Ana']]);
   const row = rowById(gas, `set|T08|${THU}|Gus`);
   assert.deepStrictEqual([row.Date, row.Day, row.Name, row.Source], [WED, 'Wed', 'Ana', 'cover']);
-  const wednesdayWithCover = gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === WED).Minutes;
+  const wednesdayWithCover = dayMinutes(gas, 'Ana', WED);
   ok(gas.post({ action: 'timeOffRemove', name: 'Gus', id: added.id }));
   const back = rowById(gas, row.ID);
   assert.deepStrictEqual([back.Date, back.Day, back.Name, back.Source], [THU, 'Thu', 'Gus', 'set'], 'it goes back to the date in its key');
-  assert.ok(gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === WED).Minutes < wednesdayWithCover, "and Ana's Wednesday shrinks again");
+  assert.ok(dayMinutes(gas, 'Ana', WED) < wednesdayWithCover, "and Ana's Wednesday shrinks again");
 });
 
 test('mgrRebuild: late people still only get what on-time people left', () => {
   const gas = world();
-  ok(save(gas, 'Ben', MON, 8, slotsFor(['Wed', 'Thu'], 9, 12))); // on time
+  ok(save(gas, 'Ben', MON, 8, hoursEach(['Wed', 'Thu'], 3))); // on time
   friday(gas);
   gas.setNow(at(LAST_FRI, '08:00'));
-  ok(save(gas, 'Ana', MON, 8, slotsFor(['Wed', 'Thu'], 9, 12))); // late, and better ranked
+  ok(save(gas, 'Ana', MON, 8, hoursEach(['Wed', 'Thu'], 3))); // late, and better ranked
   gas.setNow(at(LAST_FRI, '09:00'));
   ok(gas.post({ action: 'mgrRebuild', code: CODE, weekOf: MON }));
   scheduleRows(gas)
@@ -2726,7 +2737,7 @@ test('mgrRebuild: late people still only get what on-time people left', () => {
 
 test('mgrRebuild: a rolled row stuck uncovered gets another chance, and row numbers stay right through the deletes', () => {
   const gas = world();
-  ok(save(gas, 'Ana', MON, 6, slotsFor(['Mon'], 9, 12))); // Monday only, so a rolled row has nobody to go to
+  ok(save(gas, 'Ana', MON, 6, hoursEach(['Mon'], 3))); // Monday only, so a rolled row has nobody to go to
   friday(gas);
   gas.setNow(at(TUE, '00:35'));
   gas.tick();
@@ -2737,7 +2748,7 @@ test('mgrRebuild: a rolled row stuck uncovered gets another chance, and row numb
   assert.ok(missedBefore.length > 0);
   const setBefore = snapshotRows(gas, (row) => row.Source === 'set');
 
-  gas.sheet('Availability').appendRow([MON, 'Cora', new Date(), false, false, 20, 'Tue:8,9,10,11,12,13,14,15;Sat:8,9,10', 'Hand-edited', '']);
+  gas.sheet('Availability').appendRow([MON, 'Cora', new Date(), false, false, 20, 'Tue:8;Sat:3', 'Hand-edited', '']);
   gas.setNow(at(TUE, '08:00'));
   ok(gas.post({ action: 'mgrRebuild', code: CODE, weekOf: MON }));
 
@@ -2775,7 +2786,7 @@ test('a mail problem never turns someone\'s own save into an error', () => {
   const off = ok(gas.post({ action: 'timeOffAdd', name: 'Gus', from: THU, to: THU }));
   assert.strictEqual(off.affected.length, 1, 'the cover still happened');
   assert.strictEqual(rowById(gas, `set|T08|${THU}|Gus`).Source, 'cover');
-  assert.strictEqual(ok(save(gas, 'Cora', MON, 8, slotsFor(['Sat', 'Sun'], 8, 16))).late, true, 'the late save still went in');
+  assert.strictEqual(ok(save(gas, 'Cora', MON, 8, hoursEach(['Sat', 'Sun'], 8))).late, true, 'the late save still went in');
   assert.deepStrictEqual(ok(gas.post({ action: 'mgrRemind', code: CODE, weekOf: NEXT_MON })).sent, [], 'and a reminder that failed is not reported as sent');
   assert.strictEqual(gas.rows('Log').filter((line) => line.Action === 'email failed').length, 6, 'each one is on the record');
   assert.deepStrictEqual(gas.state.mail, []);
@@ -2880,7 +2891,7 @@ test('all the backend files are there, and the manifest has the right scopes', (
 
 test('every top-level name across the backend is unique, and private ones end in an underscore', () => {
   const seen = new Map();
-  const publicNames = new Set(['doGet', 'doPost', 'tick', 'authorize', 'installTick', 'schedPriorityScore', 'schedBuildWeek', 'schedFillOpen', 'schedShifts']);
+  const publicNames = new Set(['doGet', 'doPost', 'tick', 'authorize', 'installTick', 'schedPriorityScore', 'schedBuildWeek', 'schedFillOpen']);
   scriptFiles.forEach((file) => {
     const code = fs.readFileSync(path.join(SCRIPT_DIR, file), 'utf8');
     [...code.matchAll(/^(?:function|var|const|let|class)\s+([A-Za-z0-9_$]+)/gm)].forEach((match) => {
@@ -2990,7 +3001,7 @@ test('hours: an entry far past what was scheduled gets pointed out, until a mana
   gas.setNow(at('2026-12-01', '07:00'));
   gas.tick();
   const monthly = gas.state.mail.find((mail) => /November hours/.test(mail.subject));
-  assert.match(monthly.htmlBody, /Much longer than scheduled/);
+  assert.match(monthly.htmlBody, /Much longer than that day/);
   assert.match(monthly.htmlBody, /Ana: Mon, Nov 9, 9:00 AM - 2:00 PM, 5 hours/);
 
   ok(gas.post({ action: 'mgrHoursEdit', code: CODE, id: person('Ana').entries[0].id, end: '11:30', by: 'Max' }));
@@ -3025,7 +3036,7 @@ test('after the deadline: on time stays on time when nothing was added, with no 
   const anaBefore = scheduleRows(gas).filter((row) => row.Name === 'Ana').length;
 
   gas.setNow(at(LAST_FRI, '17:00'));
-  const same = ok(save(gas, 'Ana', MON, all.Ana.hoursWanted, all.Ana.slots, { notes: 'Might be a little late Monday' }));
+  const same = ok(save(gas, 'Ana', MON, all.Ana.hoursWanted, all.Ana.dayHours, { notes: 'Might be a little late Monday' }));
   assert.strictEqual(same.late, false);
   assert.deepStrictEqual(gas.state.mail, [], 'nothing changed, so nobody hears about it');
   const row = gas.rows('Availability').find((line) => line.Name === 'Ana');
@@ -3038,39 +3049,39 @@ test('after the deadline: on time stays on time when nothing was added, with no 
   assert.strictEqual(scheduleRows(gas).filter((line) => line.Name === 'Ana').length, anaBefore, 'she keeps her work, and her rank still counts');
 
   // Offering more than before is a late answer, as the spec says.
-  const more = ok(save(gas, 'Ana', MON, all.Ana.hoursWanted, slotsFor(['Mon', 'Wed', 'Fri', 'Sat'], 9, 12)));
+  const more = ok(save(gas, 'Ana', MON, all.Ana.hoursWanted, hoursEach(['Mon', 'Wed', 'Fri', 'Sat'], 3)));
   assert.strictEqual(more.late, true);
   assert.ok(subjects(gas).some((subject) => /Ana's availability came in late/.test(subject)));
 
   gas.state.mail.length = 0;
-  assert.strictEqual(ok(save(gas, 'Ana', MON, all.Ana.hoursWanted, slotsFor(['Mon', 'Wed', 'Fri', 'Sat'], 9, 12))).late, true, 'late stays late');
+  assert.strictEqual(ok(save(gas, 'Ana', MON, all.Ana.hoursWanted, hoursEach(['Mon', 'Wed', 'Fri', 'Sat'], 3))).late, true, 'late stays late');
   assert.deepStrictEqual(gas.state.mail, [], 'and saving the same thing again says nothing new');
 });
 
 test('after the deadline: asking for more hours counts as offering more, and "can\'t work" then real hours does too', () => {
   const gas = world();
-  ok(save(gas, 'Ana', MON, 4, slotsFor(['Mon'], 9, 12)));
+  ok(save(gas, 'Ana', MON, 4, hoursEach(['Mon'], 3)));
   ok(gas.post({ action: 'saveAvailability', name: 'Ben', weekOf: MON, none: true }));
   friday(gas);
   gas.setNow(at(LAST_FRI, '08:00'));
-  assert.strictEqual(ok(save(gas, 'Ana', MON, 6, slotsFor(['Mon'], 9, 12))).late, true);
-  assert.strictEqual(ok(save(gas, 'Ben', MON, 2, slotsFor(['Tue'], 9, 10))).late, true);
+  assert.strictEqual(ok(save(gas, 'Ana', MON, 6, hoursEach(['Mon'], 3))).late, true);
+  assert.strictEqual(ok(save(gas, 'Ben', MON, 2, hoursEach(['Tue'], 1))).late, true);
 });
 
-test('after the deadline: moving hours within a day moves the shift, even with nothing open', () => {
-  const gas = built();
-  assert.strictEqual(gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === MON).Start, '09:00');
-  gas.setNow(at(LAST_FRI, '17:00'));
-  ok(save(gas, 'Ana', MON, 6, { Mon: hours(14, 17), Wed: hours(9, 12), Fri: hours(9, 12) }));
-  assert.strictEqual(gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === MON).Start, '14:00');
-  assert.strictEqual(ok(gas.get({ action: 'availability', name: 'Ana', weekOf: MON })).late, true, 'those are hours she had not offered');
+test('after the deadline: more hours on a day she kept is late, and the same hours or fewer is not', () => {
+  const same = built();
+  same.setNow(at(LAST_FRI, '17:00'));
+  assert.strictEqual(ok(save(same, 'Ana', MON, 6, { Mon: 3, Wed: 3, Fri: 2.5 })).late, false, 'fewer on one day');
+  const more = built();
+  more.setNow(at(LAST_FRI, '17:00'));
+  assert.strictEqual(ok(save(more, 'Ana', MON, 6, { Mon: 3.5, Wed: 3, Fri: 3 })).late, true, 'half an hour more on Monday');
 });
 
 test('after the deadline: taking hours away tells the managers what no longer fits, and moves nothing', () => {
   const gas = built();
   const rowsBefore = snapshotRows(gas, (row) => row.Name === 'Ana');
   gas.setNow(at(LAST_FRI, '17:00'));
-  const reply = ok(save(gas, 'Ana', MON, 2, { Mon: [9], Wed: [9], Fri: [9] }));
+  const reply = ok(save(gas, 'Ana', MON, 2, { Mon: 1, Wed: 1, Fri: 1 }));
   assert.strictEqual(reply.late, false);
   assert.deepStrictEqual(snapshotRows(gas, (row) => row.Name === 'Ana'), rowsBefore, 'that is a rule for the owner to decide');
   const alert = gas.state.mail.find((mail) => /Ana's availability changed/.test(mail.subject));
@@ -3079,14 +3090,14 @@ test('after the deadline: taking hours away tells the managers what no longer fi
   assert.match(alert.htmlBody, /Mon, Nov 9: has 2\.1 hours of work and is free for 1/);
 
   gas.state.mail.length = 0;
-  ok(save(gas, 'Ana', MON, 2, { Mon: [9], Wed: [9], Fri: [9] }));
+  ok(save(gas, 'Ana', MON, 2, { Mon: 1, Wed: 1, Fri: 1 }));
   assert.deepStrictEqual(gas.state.mail, [], 'once is enough');
 });
 
 test('mail quota: a flood of saves or out-of-town cycles can\'t use up the day\'s email', () => {
   const gas = built(['Ana', 'Ben', 'Cora']);
   gas.setNow(at(LAST_FRI, '09:00'));
-  for (let i = 0; i < 60; i++) ok(save(gas, 'Dev', MON, 5, slotsFor(['Tue', 'Thu'], 13, 16)));
+  for (let i = 0; i < 60; i++) ok(save(gas, 'Dev', MON, 5, hoursEach(['Tue', 'Thu'], 3)));
   assert.strictEqual(gas.state.mail.length, 1, 'sixty identical late saves are one alert');
 
   gas.state.mail.length = 0;
@@ -3188,7 +3199,7 @@ test('overlaps: hand-made clock times that stack up count as issues, instead of 
 
 test('mgrRebuild: cover for a set day that has passed stays put, and is not lost', () => {
   const gas = world();
-  ok(save(gas, 'Ben', MON, 8, slotsFor(['Thu'], 8, 14)));
+  ok(save(gas, 'Ben', MON, 8, hoursEach(['Thu'], 6)));
   ok(gas.post({ action: 'timeOffAdd', name: 'Hal', from: TUE, to: TUE }));
   friday(gas);
   const id = `set|T14|${TUE}|Hal`;
@@ -3201,7 +3212,7 @@ test('mgrRebuild: cover for a set day that has passed stays put, and is not lost
   // If Ben drops out too, it waits uncovered, and the next Re-run can still find someone.
   ok(gas.post({ action: 'timeOffAdd', name: 'Ben', from: THU, to: THU }));
   assert.strictEqual(rowById(gas, id).Name, '');
-  gas.sheet('Availability').appendRow([MON, 'Cora', new Date(), false, false, 20, 'Thu:8,9,10,11,12,13,14,15', 'Thu 8 AM-4 PM', '']);
+  gas.sheet('Availability').appendRow([MON, 'Cora', new Date(), false, false, 20, 'Thu:8', 'Thu 8 hrs', '']);
   ok(gas.post({ action: 'mgrRebuild', code: CODE, weekOf: MON }));
   assert.deepStrictEqual([rowById(gas, id).Name, rowById(gas, id).Date], ['Cora', THU]);
   const ids = scheduleRows(gas).map((row) => row.ID);
@@ -3219,7 +3230,6 @@ test('partial one-offs: the worker is told, the list shows what is on the schedu
   assert.strictEqual(added.oneOff.minutes, 240);
 
   gas.setNow(at(row.Date, '09:05'));
-  const shiftBefore = gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === row.Date).End;
   const task = ok(gas.get({ action: 'boot', name: 'Ana' })).today.tasks.find((one) => one.id === id);
   assert.strictEqual(task.partial, true);
   assert.ok(!('minutes' in task), 'a partial task keeps its minutes off the staff screen too');
@@ -3229,7 +3239,6 @@ test('partial one-offs: the worker is told, the list shows what is on the schedu
   ok(gas.post({ action: 'mgrOneOffEdit', code: CODE, id: added.id, title: 'Scrub the whole rig' }));
   const after = rowById(gas, id);
   assert.deepStrictEqual([after.Task, after.Minutes], ['Scrub the whole rig', row.Minutes]);
-  assert.strictEqual(gas.rows('Shifts').find((shift) => shift.Name === 'Ana' && shift.Date === row.Date).End, shiftBefore, 'and the shift stays where it was');
 
   // A new size has to fit all over again, unless a manager placed it by hand.
   const resized = ok(gas.post({ action: 'mgrOneOffEdit', code: CODE, id: added.id, minutes: 30 }));
@@ -3266,7 +3275,7 @@ test('out of town: a Flexible person who takes the dates back gets first go at t
   assert.ok(back.restored.length >= wednesday.length, 'she has them back');
   back.restored.forEach((item) => assert.ok(item.title));
   assert.ok(scheduleRows(gas).some((row) => row.Name === 'Ana' && row.Date === WED));
-  assert.ok(gas.rows('Shifts').some((shift) => shift.Name === 'Ana' && shift.Date === WED));
+  assert.ok(scheduleRows(gas).some((row) => row.Name === 'Ana' && row.Date === WED));
   const alert = gas.state.mail.find((mail) => /Ana is back in town/.test(mail.subject));
   assert.ok(alert, 'and the managers hear about it');
   assert.ok(!scheduleRows(gas).some((row) => row.Name === 'Ana' && row.Date === WED && row.Source === 'cover'), 'it is her own work again, not cover');
@@ -3312,15 +3321,15 @@ test('availability: from Monday on, someone who never answered can still fill ou
   assert.strictEqual(ok(gas.get({ action: 'boot', name: 'Ana' })).availability.weeks.length, 6, 'not for someone who answered');
   assert.strictEqual(ok(gas.get({ action: 'boot', name: 'Gus' })).availability.weeks.length, 6, 'or someone with set days');
 
-  ok(save(gas, 'Dev', MON, 5, slotsFor(['Tue', 'Thu'], 13, 16)));
+  ok(save(gas, 'Dev', MON, 5, hoursEach(['Tue', 'Thu'], 3)));
   const after = ok(gas.get({ action: 'boot', name: 'Dev' })).availability.weeks;
   assert.deepStrictEqual([after.length, after[0].weekOf], [6, NEXT_MON]);
 });
 
 test('missed rows stay put, but use up nobody\'s hours', () => {
   const gas = world();
-  ok(save(gas, 'Ana', MON, 4, slotsFor(['Mon', 'Wed', 'Fri'], 9, 12)));
-  ok(save(gas, 'Cora', MON, 20, slotsFor(MON_SAT, 8, 16)));
+  ok(save(gas, 'Ana', MON, 4, hoursEach(['Mon', 'Wed', 'Fri'], 3)));
+  ok(save(gas, 'Cora', MON, 20, hoursEach(MON_SAT, 8)));
   friday(gas);
   const missedBefore = (rows) => rows.filter((row) => row.Name === 'Ana' && row.Status === 'missed').reduce((sum, row) => sum + row.Minutes, 0);
 

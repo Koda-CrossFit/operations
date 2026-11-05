@@ -19,7 +19,7 @@ const http = require('node:http');
 const path = require('node:path');
 
 const { createGas, fakeManagers } = require('./gas-mock.js');
-const { hours } = require('./fixtures.js');
+const { hoursEach } = require('./fixtures.js');
 
 const ROOT = path.join(__dirname, '..');
 const DEFAULT_PORT = 8787;
@@ -41,14 +41,6 @@ const MIME_TYPES = {
 
 /* ------------------------------------------------------------- the fake world ---- */
 
-function slots(days, from, to) {
-  const out = {};
-  days.forEach((day) => {
-    out[day] = hours(from, to);
-  });
-  return out;
-}
-
 /**
  * Builds the world through the real API and the real Friday run, so nothing in it is
  * staged: availability saved on time, a real weekly tick, a real Monday, a real nightly.
@@ -61,7 +53,7 @@ function resetWorld(options) {
     if (!reply.ok) throw new Error(`Reset failed on ${body.action}: ${reply.error}`);
     return reply;
   };
-  const save = (name, weekOf, hoursWanted, days, from, to, notes) => post({ action: 'saveAvailability', name, weekOf, hoursWanted, slots: slots(days, from, to), notes: notes || '' });
+  const save = (name, weekOf, hoursWanted, days, hours, notes) => post({ action: 'saveAvailability', name, weekOf, hoursWanted, dayHours: hoursEach(days, hours), notes: notes || '' });
 
   // Thursday, the day before the first deadline.
   gas.setNow('2026-11-05T10:00:00-07:00');
@@ -81,16 +73,16 @@ function resetWorld(options) {
   post({ action: 'hoursAdd', name: 'Ben', date: '2026-10-29', start: '10:00', end: '12:15', note: '' });
 
   ['2026-11-09', '2026-11-16'].forEach((weekOf) => {
-    save('Ana', weekOf, 8, ['Mon', 'Tue', 'Thu'], 9, 12);
-    save('Ben', weekOf, 5, ['Wed', 'Fri'], 10, 13);
-    save('Cora', weekOf, 6, ['Wed', 'Fri', 'Sat'], 8, 16);
+    save('Ana', weekOf, 8, ['Mon', 'Tue', 'Thu'], 3);
+    save('Ben', weekOf, 5, ['Wed', 'Fri'], 3);
+    save('Cora', weekOf, 6, ['Wed', 'Fri', 'Sat'], 8);
   });
-  save('Dev', '2026-11-09', 5, ['Tue', 'Thu'], 13, 16, 'Afternoons only');
+  save('Dev', '2026-11-09', 5, ['Tue', 'Thu'], 3, 'Afternoons only');
   post({ action: 'saveAvailability', name: 'Dev', weekOf: '2026-11-16', none: true, notes: 'Out of state' });
 
   post({ action: 'mgrOneOffAdd', code: MANAGER_CODE, by: 'Max', title: 'Replace the lobby light bulbs', details: 'Spare bulbs are in the office closet', priority: 'A', minutes: 15, weekOf: '2026-11-09', day: 'Tue', who: [] });
   post({ action: 'mgrOneOffAdd', code: MANAGER_CODE, by: 'Mia', title: 'Wipe down the rig', details: '', priority: 'B', minutes: 30, weekOf: '2026-11-09', day: '', who: [] });
-  post({ action: 'mgrOneOffAdd', code: MANAGER_CODE, by: 'Mia', title: 'Power wash the back patio', details: 'Nobody has a long enough block for this one, so it shows as open', priority: 'B', minutes: 240, weekOf: '2026-11-09', day: 'Tue', who: [] });
+  post({ action: 'mgrOneOffAdd', code: MANAGER_CODE, by: 'Mia', title: 'Power wash the back patio', details: 'Nobody has a long enough day for this one, so it shows as open', priority: 'B', minutes: 240, weekOf: '2026-11-09', day: 'Tue', who: [] });
 
   post({ action: 'timeOffAdd', name: 'Gus', from: '2026-11-12', to: '2026-11-12', note: 'Visiting family' });
 

@@ -223,29 +223,21 @@ function requireHoursWanted_(value) {
   return Math.round(hours * 100) / 100;
 }
 
-/** Known days and whole hours from 5 through 21 only. Anything else is an error, not a guess. */
-function cleanSlots_(raw) {
-  var slots = {};
-  if (raw === null || raw === undefined || raw === '') return slots;
+/** Known days and half-hour steps from 0 up to DAY_HOURS_MAX_ only, with zero days dropped. Anything else is an error, not a guess. */
+function cleanDayHours_(raw) {
+  var dayHours = {};
+  if (raw === null || raw === undefined || raw === '') return dayHours;
   if (typeof raw !== 'object' || Array.isArray(raw)) fail_("We couldn't read those hours. Please try again.");
   Object.keys(raw).forEach(function (day) {
     if (DAY_KEYS_.indexOf(day) < 0) fail_("We couldn't read those days. Please try again.");
-    if (!Array.isArray(raw[day])) fail_("We couldn't read those hours. Please try again.");
-    var seen = Object.create(null);
-    var hours = [];
-    raw[day].forEach(function (value) {
-      var hour = Number(value);
-      if (hour !== Math.floor(hour) || hour < SLOT_FIRST_HOUR_ || hour > SLOT_LAST_HOUR_) fail_('Hours have to be between 5 AM and 9 PM.');
-      if (!seen[hour]) hours.push(hour);
-      seen[hour] = true;
-    });
-    if (hours.length) {
-      slots[day] = hours.sort(function (a, b) {
-        return a - b;
-      });
-    }
+    var value = raw[day];
+    if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) fail_("We couldn't read those hours. Please try again.");
+    var hours = Number(value);
+    if (!(hours >= 0 && hours <= DAY_HOURS_MAX_)) fail_('Hours in a day have to be between 0 and ' + DAY_HOURS_MAX_ + '.');
+    if (hours * 2 !== Math.floor(hours * 2)) fail_('Hours in a day go in half-hour steps.');
+    if (hours > 0) dayHours[day] = hours;
   });
-  return slots;
+  return dayHours;
 }
 
 /* ------------------------------------------------------------------ views ---- */
@@ -285,13 +277,6 @@ function sortRows_(rows) {
     var byOrder = orderOf(a) === orderOf(b) ? 0 : orderOf(a) - orderOf(b);
     return schedPriorityScore(b.priority) - schedPriorityScore(a.priority) || byOrder || compareText_(a.title, b.title);
   });
-}
-
-function shiftFor_(name, date) {
-  var shift = shiftRows_().filter(function (candidate) {
-    return candidate.name === name && candidate.date === date;
-  })[0];
-  return shift ? { start: clockLabel_(shift.start), end: clockLabel_(shift.end) } : null;
 }
 
 /** HoursEntry in SPEC section 8. */
@@ -366,7 +351,6 @@ function weekView_(person, weekOf) {
       return {
         date: date,
         label: dayLabel_(date),
-        shift: shiftFor_(person.name, date),
         tasks: sortRows_(
           rows.filter(function (row) {
             return row.date === date;
@@ -403,11 +387,9 @@ function todayView_(person, info) {
         return row.date;
       })
       .sort()[0];
-    var shift = shiftFor_(person.name, date);
     next = {
       date: date,
       label: dayLabel_(date),
-      start: shift ? shift.start : '',
       count: later.filter(function (row) {
         return row.date === date;
       }).length,
@@ -416,7 +398,6 @@ function todayView_(person, info) {
   return {
     date: info.date,
     closed: closedNote_(info.date),
-    shift: shiftFor_(person.name, info.date),
     tasks: sortRows_(today.filter(mine)).map(taskView_),
     openTasks: sortRows_(
       today.filter(function (row) {
@@ -543,8 +524,6 @@ function apiAvailability_(req) {
   var info = nowInfo_();
   var weekOf = requireMonday_(req.weekOf);
   var row = availabilityRow_(person.name, weekOf);
-  var hours = [];
-  for (var hour = SLOT_FIRST_HOUR_; hour <= SLOT_LAST_HOUR_; hour++) hours.push(hour);
   return withHeld_(weekOf, {
     weekOf: weekOf,
     days: weekDates_(weekOf).map(function (date) {
@@ -556,8 +535,7 @@ function apiAvailability_(req) {
         closed: closedNote_(date),
       };
     }),
-    hours: hours,
-    slots: row ? row.slots : {},
+    dayHours: row ? row.dayHours : {},
     hoursWanted: row ? row.hoursWanted : null,
     none: row ? row.none : false,
     notes: row ? row.notes : '',
@@ -578,7 +556,7 @@ function lastSubmission_(name, weekOf) {
     .sort(function (a, b) {
       return compareText_(b.weekOf, a.weekOf);
     })[0];
-  return earlier ? { weekOf: earlier.weekOf, slots: earlier.slots, hoursWanted: earlier.hoursWanted } : null;
+  return earlier ? { weekOf: earlier.weekOf, dayHours: earlier.dayHours, hoursWanted: earlier.hoursWanted } : null;
 }
 
 /* ------------------------------------------------- matching against the sheet ---- */
@@ -660,7 +638,6 @@ function matchInput_(weekOf) {
   return {
     weekOf: weekOf,
     today: info.date,
-    nowMinutes: info.minutes,
     staff: staff_().map(function (person) {
       return { name: person.name, rank: person.rank, type: person.type, active: person.active, setDays: person.setDays, setTasks: person.setTasks };
     }),
@@ -739,45 +716,8 @@ function runWeekBuild_(weekOf) {
   if (isPublished_(weekOf)) return;
   var rows = matchWeek_(weekOf, scheduleForWeek_(weekOf));
   appendRows_(TABS_.SCHEDULE, rows.map(rowToCells_));
-  rewriteShifts_(weekOf);
   markBuilt_(weekOf);
   log_('system', 'schedule built', 'Week of ' + weekOf + ': ' + rows.length + ' rows');
-}
-
-/** Replaces a week's lines in the Shifts tab from what's in the Schedule tab right now. */
-function rewriteShifts_(weekOf) {
-  var rows = scheduleForWeek_(weekOf)
-    .filter(function (row) {
-      return row.name;
-    })
-    .map(function (row) {
-      return { name: row.name, date: row.date, minutes: row.minutes };
-    });
-  var shifts = schedShifts(rows, availabilityMap_(weekOf), weekOf);
-  deleteRows_(
-    TABS_.SHIFTS,
-    shiftRows_()
-      .filter(function (shift) {
-        return shift.weekOf === weekOf;
-      })
-      .map(function (shift) {
-        return shift._row;
-      })
-  );
-  appendRows_(
-    TABS_.SHIFTS,
-    shifts.map(function (shift) {
-      return { 'Week Of': weekOf, Date: shift.date, Name: shift.name, Start: shift.start, End: shift.end, Minutes: shift.minutes };
-    })
-  );
-}
-
-function rewriteShiftsFor_(dates) {
-  var weeks = Object.create(null);
-  dates.forEach(function (date) {
-    if (date) weeks[mondayOf_(date)] = true;
-  });
-  Object.keys(weeks).forEach(rewriteShifts_);
 }
 
 /* --------------------------------------------------------- staff: availability ---- */
@@ -791,16 +731,16 @@ function apiSaveAvailability_(req) {
   if (daysBetween_(info.monday, weekOf) > WEEKS_MAX_AHEAD_ * 7) fail_('That week is too far ahead.');
 
   var none = isTrue_(req.none);
-  var slots = none ? {} : cleanSlots_(req.slots);
+  var dayHours = none ? {} : cleanDayHours_(req.dayHours);
   var hoursWanted = none ? 0 : requireHoursWanted_(req.hoursWanted);
   if (!none && !(hoursWanted > 0)) fail_('Please tell us how many hours you want this week.');
-  if (!none && !Object.keys(slots).length) fail_("Please pick at least one hour, or tap Can't work this week.");
+  if (!none && !Object.keys(dayHours).length) fail_("Please add hours for at least one day, or tap Can't work this week.");
 
   var past = pastDeadline_(weekOf, info);
   var existing = availabilityRow_(person.name, weekOf);
   // An answer that came in on time stays on time after the deadline, unless it now offers more.
-  var late = past && (!existing || existing.late || offersMore_(existing, slots, hoursWanted));
-  var changed = !existing || existing.none !== none || existing.hoursWanted !== hoursWanted || slotsToText_(existing.slots) !== slotsToText_(slots);
+  var late = past && (!existing || existing.late || offersMore_(existing, dayHours, hoursWanted));
+  var changed = !existing || existing.none !== none || existing.hoursWanted !== hoursWanted || dayHoursToText_(existing.dayHours) !== dayHoursToText_(dayHours);
   var cells = {
     'Week Of': weekOf,
     Name: person.name,
@@ -808,8 +748,8 @@ function apiSaveAvailability_(req) {
     Late: late,
     None: none,
     'Hours Wanted': hoursWanted,
-    Slots: slotsToText_(slots),
-    Readable: none ? "Can't work this week" : slotsReadable_(slots),
+    Slots: dayHoursToText_(dayHours),
+    Readable: none ? "Can't work this week" : dayHoursReadable_(dayHours),
     Notes: cleanText_(req.notes, MAX_TEXT_),
   };
   if (existing) updateRow_(TABS_.AVAILABILITY, existing._row, cells);
@@ -832,13 +772,11 @@ function apiSaveAvailability_(req) {
   return { late: late, picked: picked };
 }
 
-/** Does this save offer an hour the last one didn't, or ask for more hours? */
-function offersMore_(existing, slots, hoursWanted) {
+/** Does this save offer more hours on a day than the last one, or ask for more hours? */
+function offersMore_(existing, dayHours, hoursWanted) {
   if (hoursWanted > existing.hoursWanted) return true;
-  return Object.keys(slots).some(function (day) {
-    return slots[day].some(function (hour) {
-      return (existing.slots[day] || []).indexOf(hour) < 0;
-    });
+  return Object.keys(dayHours).some(function (day) {
+    return dayHours[day] > (existing.dayHours[day] || 0);
   });
 }
 
@@ -857,13 +795,13 @@ function availabilityOverage_(person, weekOf, info) {
   var lines = [];
   if (total(rows) > entry.hoursWanted * 60 + SCHED_HOURS_TOLERANCE_) lines.push('Has ' + hoursText_(total(rows)) + ' hours this week and now wants ' + entry.hoursWanted + '.');
   weekDates_(weekOf).forEach(function (date) {
-    var block = schedLargestBlock_(entry.slots, dayKey_(date), null);
+    var offered = entry.dayHours[dayKey_(date)];
     var dayMinutes = total(
       rows.filter(function (row) {
         return row.date === date;
       })
     );
-    if (date >= info.date && block && dayMinutes > (block.end - block.start) * 60) lines.push(dayLabel_(date) + ': has ' + hoursText_(dayMinutes) + ' hours of work and is free for ' + (block.end - block.start) + '.');
+    if (date >= info.date && offered && dayMinutes > offered * 60) lines.push(dayLabel_(date) + ': has ' + hoursText_(dayMinutes) + ' hours of work and is free for ' + offered + '.');
   });
   return lines;
 }
@@ -874,19 +812,16 @@ function availabilityOverage_(person, weekOf, info) {
  */
 function lateFill_(person, weekOf, info) {
   var rows = scheduleForWeek_(weekOf);
-  var slots = availabilityMap_(weekOf)[person.name].slots;
+  var dayHours = availabilityMap_(weekOf)[person.name].dayHours;
   var released = rows.filter(function (row) {
-    var dayGone = !(slots[row.day] && slots[row.day].length);
+    var dayGone = !(dayHours[row.day] > 0);
     return row.name === person.name && row.status === 'open' && row.source !== 'manual' && row.date >= info.date && dayGone;
   });
   var uncovered = rows.filter(function (row) {
     return !row.name && row.status === 'open' && row.date >= info.date;
   });
   var open = released.concat(uncovered);
-  if (!open.length) {
-    rewriteShifts_(weekOf); // their hours may have moved within a day they kept
-    return { picked: [], dropped: [] };
-  }
+  if (!open.length) return { picked: [], dropped: [] };
 
   var openIds = Object.create(null);
   open.forEach(function (row) {
@@ -908,7 +843,6 @@ function lateFill_(person, weekOf, info) {
     if (row.name) row.source = 'late';
   });
   saveFilledRows_(result.rows);
-  rewriteShifts_(weekOf);
 
   var title = function (row) {
     return row.title;
@@ -980,7 +914,6 @@ function coverWeek_(person, weekOf, from, to) {
     .map(rowForScheduler_);
   var result = schedFillOpen(input);
   saveFilledRows_(result.rows);
-  rewriteShifts_(weekOf);
   return result.rows.map(function (row) {
     return { date: row.date, title: row.title, coveredBy: row.name };
   });
@@ -1032,7 +965,6 @@ function refillAfterTimeOff_(person, entry) {
       return row.name === person.name;
     });
     saveFilledRows_(mine);
-    rewriteShifts_(week);
     restored = restored.concat(
       mine.map(function (row) {
         return { date: row.date, title: row.title };
@@ -1046,17 +978,14 @@ function refillAfterTimeOff_(person, entry) {
 function restoreSetRows_(person, entry) {
   var info = nowInfo_();
   var restored = [];
-  var dates = [];
   scheduleRows_().forEach(function (row) {
     var key = row.id.split('|');
     if (key[0] !== 'set' || key[3] !== person.name || row.status !== 'open') return;
     var date = key[2];
     if (date < entry.from || date > entry.to || date < info.date || isAway_(person.name, date)) return;
     updateRow_(TABS_.SCHEDULE, row._row, { Name: person.name, Date: date, Day: dayKey_(date), 'Week Of': mondayOf_(date), Source: 'set' });
-    dates.push(date, row.date);
     restored.push({ date: date, title: row.title });
   });
-  rewriteShiftsFor_(dates);
   return restored;
 }
 
@@ -1103,7 +1032,6 @@ function apiTaskClaim_(req) {
   if (row.date !== nowInfo_().date) fail_('You can only take a task on the day it is due.');
   if (row.status !== 'open') fail_('That task is already finished.');
   updateRow_(TABS_.SCHEDULE, row._row, { Name: person.name, Source: 'manual' });
-  rewriteShifts_(mondayOf_(row.date));
   log_(person.name, 'task taken', row.title + ' (' + row.date + ')');
   return { task: taskView_(requireRow_(row.id)) };
 }
@@ -1329,7 +1257,6 @@ function boardDay_(date, weekRows) {
     groups: names.map(function (name) {
       return {
         name: name,
-        shift: shiftFor_(name, date),
         tasks: dayRows
           .filter(function (row) {
             return row.name === name;
@@ -1523,12 +1450,8 @@ function placeOneOff_(id) {
   var item = requireOneOff_(id);
   var row = rowOfOneOff_(id);
   var hadRow = row && row.status === 'open';
-  var oldDate = hadRow ? row.date : '';
   if (!isPublished_(item.weekOf)) {
-    if (hadRow) {
-      deleteRows_(TABS_.SCHEDULE, [row._row]);
-      rewriteShiftsFor_([oldDate]);
-    }
+    if (hadRow) deleteRows_(TABS_.SCHEDULE, [row._row]);
     return null;
   }
   var input = matchInput_(item.weekOf);
@@ -1542,7 +1465,6 @@ function placeOneOff_(id) {
   var placed = schedFillOpen(input).rows[0];
   if (hadRow) saveFilledRows_([placed]);
   else appendRows_(TABS_.SCHEDULE, [rowToCells_(placed)]);
-  rewriteShiftsFor_([oldDate, placed.date]);
   return { name: placed.name, date: placed.date };
 }
 
@@ -1604,7 +1526,6 @@ function apiMgrOneOffEdit_(req) {
     var cells = { Task: fields.title, Details: fields.details, Priority: fields.priority };
     if (resized) cells.Minutes = fields.minutes; // a partial row only holds what fit, so a new title can't change its size
     updateRow_(TABS_.SCHEDULE, row._row, cells);
-    rewriteShiftsFor_([row.date]);
   }
   // A new size has to fit all over again, unless a manager put it there by hand.
   var replace = moved || !row || (resized && hasOpenRow && row.source !== 'manual');
@@ -1619,16 +1540,12 @@ function apiMgrOneOffDelete_(req) {
   var open = scheduleRows_().filter(function (row) {
     return row.oneOffId === item.id && row.status !== 'done';
   });
-  var dates = open.map(function (row) {
-    return row.date;
-  });
   deleteRows_(
     TABS_.SCHEDULE,
     open.map(function (row) {
       return row._row;
     })
   );
-  rewriteShiftsFor_(dates);
   log_(managerName_(req.by), 'one-off deleted', item.title);
   return {};
 }
@@ -1645,7 +1562,6 @@ function apiMgrAssign_(req) {
   if (closedNote_(date)) fail_('The gym is closed that day.');
   updateRow_(TABS_.SCHEDULE, row._row, { Name: person.name, Date: date, Day: dayKey_(date), 'Week Of': mondayOf_(date), Source: 'manual', Status: 'open' });
   moveOneOffsToWeek_([row], mondayOf_(date));
-  rewriteShiftsFor_([row.date, date]);
   log_(managerName_(req.by), 'task assigned', row.title + ' to ' + person.name + ' on ' + date);
   return { task: managerTaskView_(requireRow_(row.id)) };
 }
@@ -1714,7 +1630,6 @@ function apiMgrRebuild_(req) {
     })
   );
   appendRows_(TABS_.SCHEDULE, fresh.map(rowToCells_));
-  rewriteShifts_(weekOf);
   markBuilt_(weekOf);
   log_(managerName_(req.by), 'matching re-run', 'Week of ' + weekOf + ': ' + fresh.length + ' rows');
   return {

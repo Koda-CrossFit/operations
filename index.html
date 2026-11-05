@@ -200,12 +200,10 @@ svg{display:block;flex:none}
 
 /* ----- clock card ----- */
 .clock{padding:20px}
-.clock-label{font-size:14px;color:var(--muted)}
-.clock-shift{font-size:19px;line-height:1.3;font-weight:600;letter-spacing:-.01em;color:var(--ink);margin-bottom:14px}
 .clock-state{display:flex;align-items:center;gap:8px;font-size:16px;font-weight:500;color:var(--ink)}
 .clock-dot{flex:none;width:9px;height:9px;border-radius:50%;background:var(--koda)}
 .clock-time{font-size:30px;line-height:1.2;font-weight:700;letter-spacing:-.02em;color:var(--ink);margin:4px 0 2px}
-.clock-sub{font-size:15px;color:var(--muted);margin-bottom:14px}
+.clock-state+.btn,.clock-time+.btn{margin-top:14px}
 .clock-note{font-size:15px;color:var(--muted);margin-bottom:12px}
 .clock .link{margin-top:6px}
 .clock-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
@@ -339,40 +337,27 @@ svg{display:block;flex:none}
 .step-input:focus-visible{outline-offset:4px;border-radius:8px}
 .step-input::placeholder{color:#A9B5C2;opacity:1}
 .step-unit{display:block;font-size:14px;color:var(--muted)}
-.grid-wrap{margin-top:8px}
-.grid{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;background:#fff}
-.grid th,.grid td{padding:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:#fff;font-weight:inherit}
-.grid thead th{position:sticky;top:var(--stick);z-index:5;border-top:1px solid var(--line);background:#fff}
-.grid tr>:first-child{width:42px;border-left:1px solid var(--line)}
-@media (min-width:360px){.grid tr>:first-child{width:50px}}
-.grid thead th:first-child{border-top-left-radius:12px}
-.grid thead th:last-child{border-top-right-radius:12px}
-.grid tbody tr:last-child th{border-bottom-left-radius:12px}
-.grid tbody tr:last-child td:last-child{border-bottom-right-radius:12px}
-.g-day,.g-hour,.g-cell{display:block;width:100%;text-align:center;touch-action:manipulation}
-.g-day{padding:7px 0 6px;line-height:1.15;color:var(--ink);border-radius:8px}
-.g-day b{display:block;font-size:13px;font-weight:600}
-.g-day span{display:block;font-size:15px;font-weight:600;color:var(--muted)}
-.g-hour{height:38px;font-size:13px;line-height:1.1;font-weight:500;color:var(--muted);white-space:nowrap}
-.g-hour .ap{display:block;font-size:13px}
-.g-cell{height:38px;background:#fff;transition:background-color .08s}
-.g-cell[aria-pressed=true]{background:var(--koda)}
-.g-cell:focus-visible,.g-hour:focus-visible,.g-day:focus-visible{outline-offset:-2px}
-.g-cell[aria-pressed=true]:focus-visible{outline-color:#fff}
-.grid td.off,.grid td.off .g-cell{background:var(--soft)}
-.grid th.off .g-day b,.grid th.off .g-day span{color:#9AA5B1}
-.grid tbody tr:last-child td:last-child .g-cell{border-bottom-right-radius:11px}
-@media (hover:hover){
-  .g-cell:not(:disabled):hover{background:var(--tint)}
-  .g-cell[aria-pressed=true]:not(:disabled):hover{background:#1F4366}
-}
-.grid-foot{
+.dh-list{list-style:none;margin:10px 0 0;padding:0;overflow:hidden}
+.dh-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:68px;padding:8px 12px 8px 16px;border-top:1px solid var(--line)}
+.dh-row:first-child{border-top:0}
+.dh-row.off{background:var(--soft)}
+.dh-day{min-width:0}
+.dh-day b{display:block;font-size:16px;line-height:1.3;font-weight:600;color:var(--ink)}
+.dh-day span{display:block;font-size:14px;line-height:1.3;color:var(--muted)}
+.dh-row.off .dh-day b{color:var(--muted)}
+.dh-row .chip{flex:none;max-width:60%}
+.dh-step{display:flex;align-items:center;flex:none}
+.dh-step .step{width:48px;height:48px}
+.dh-val{width:54px;text-align:center}
+.dh-val b{display:block;font-size:22px;line-height:1.15;font-weight:700;letter-spacing:-.02em;color:var(--ink)}
+.dh-val span{display:block;font-size:13px;line-height:1.2;color:var(--muted)}
+.dh-val.zero b{color:#A9B5C2}
+.hours-foot{
   position:sticky;bottom:var(--floor);z-index:4;background:#fff;
-  display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;margin-top:0;padding:4px 0;
+  display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:48px;margin-top:4px;padding:4px 0;
 }
-.grid-count{font-size:16px;font-weight:600;color:var(--ink)}
-.grid-note{margin-top:2px;font-size:15px;color:var(--muted)}
-.off-note{margin-top:8px;font-size:15px;color:var(--muted)}
+.hours-count{font-size:16px;font-weight:600;color:var(--ink)}
+.hours-note{margin-top:2px;font-size:15px;color:var(--muted)}
 .home-card{padding:14px 12px 18px 20px}
 .home-card p{margin:2px 8px 0 0}
 .home-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -485,7 +470,6 @@ select.input{
 .mgroup-head:focus-visible{outline-offset:-3px;border-radius:10px}
 .mg-who{flex:1;min-width:0}
 .mg-name{display:block;font-weight:600;color:var(--ink)}
-.mg-shift{display:block;font-size:14px;color:var(--muted)}
 .mg-count{flex:none;font-size:14px;color:var(--muted);white-space:nowrap}
 .mg-count .word{display:none}
 @media (min-width:380px){.mg-count .word{display:inline}}
@@ -673,6 +657,7 @@ const API_URL = location.hostname === 'localhost' ? '/api' : PROD_API_URL;
 /* ======================================================================= helpers ======= */
 
 const $ = (selector, root) => (root || document).querySelector(selector);
+const DAY_HOURS_MAX = 16; // the same limit as Config.js
 const DAY_LONG = { Mon: 'Monday', Tue: 'Tuesday', Wed: 'Wednesday', Thu: 'Thursday', Fri: 'Friday', Sat: 'Saturday', Sun: 'Sunday' };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const STORE_PREFIX = 'koda-ops.v1.';
@@ -880,9 +865,6 @@ function labelToClock(label) {
 function clockToLabel(clock) {
   const parts = String(clock).split(':').map(Number);
   return minutesToLabel(parts[0] * 60 + parts[1]);
-}
-function hourLabel(hour) {
-  return ((hour + 11) % 12) + 1 + ' ' + (hour < 12 ? 'AM' : 'PM');
 }
 function deadlineLong(label) {
   return String(label || '').replace(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/, (day) => DAY_LONG[day]).replace(/ (AM|PM)/, (match, half) => '\u00A0' + half);
@@ -1466,13 +1448,13 @@ function setAvailForm(weekOf, data) {
   const existing = S.avail.forms[weekOf];
   if (existing && existing.dirty) return;
   const draft = store.get(draftKey(weekOf));
-  if (draft && draft.base === data.submittedAt) {
-    S.avail.forms[weekOf] = { slots: draft.slots, hoursWanted: draft.hoursWanted, notes: draft.notes, dirty: true, editing: true, message: '', error: '' };
+  if (draft && draft.base === data.submittedAt && draft.dayHours && typeof draft.dayHours === 'object') {
+    S.avail.forms[weekOf] = { dayHours: draft.dayHours, hoursWanted: draft.hoursWanted, notes: draft.notes, dirty: true, editing: true, message: '', error: '' };
     return;
   }
-  if (draft) store.del(draftKey(weekOf)); // saved since, from somewhere else
+  if (draft) store.del(draftKey(weekOf)); // saved since from somewhere else, or an old draft from before days had hours
   S.avail.forms[weekOf] = {
-    slots: JSON.parse(JSON.stringify(data.slots || {})),
+    dayHours: JSON.parse(JSON.stringify(data.dayHours || {})),
     hoursWanted: data.none ? null : data.hoursWanted,
     notes: data.notes || '',
     dirty: false,
@@ -1486,7 +1468,7 @@ function saveDraft(weekOf) {
   const current = S.avail.forms[weekOf];
   if (!data || !current) return;
   current.dirty = true;
-  store.set(draftKey(weekOf), { slots: current.slots, hoursWanted: current.hoursWanted, notes: current.notes, base: data.submittedAt });
+  store.set(draftKey(weekOf), { dayHours: current.dayHours, hoursWanted: current.hoursWanted, notes: current.notes, base: data.submittedAt });
 }
 async function loadAvailabilityWeek(weekOf) {
   const key = 'avail.' + S.me + '.' + weekOf;
@@ -1781,8 +1763,6 @@ function todayEntry(view) {
 function viewClockCard(view, options) {
   const small = options && options.small;
   const noLink = options && options.noLink;
-  const shift = view.today.shift;
-  const shiftText = shift ? shift.start + ' - ' + shift.end : '';
   if (view.clock.status === 'in' && view.clock.entry) {
     const entry = view.clock.entry;
     const elapsed = elapsedText(entry, view);
@@ -1803,7 +1783,6 @@ function viewClockCard(view, options) {
       <section class="card clock clock-linked" aria-label="Time clock">
         <div class="clock-state"><span class="clock-dot" aria-hidden="true"></span>On the clock since ${sinceText(entry, view)}</div>
         ${elapsed ? html`<div class="clock-time">${elapsed}</div>` : ''}
-        <div class="clock-sub">${shiftText ? 'Scheduled ' + shiftText : ''}</div>
         <button type="button" class="btn btn-soft" data-act="clock-out">Clock out</button>
         ${viewAlreadyFinished(entry)}
       </section>`;
@@ -1825,7 +1804,6 @@ function viewClockCard(view, options) {
   // Once they've clocked out today, going back on the clock isn't the main thing any more.
   return html`
     <section class="card clock${noLink ? '' : ' clock-linked'}" aria-label="Time clock">
-      ${shiftText ? html`<div class="clock-label">Scheduled today</div><div class="clock-shift">${shiftText}</div>` : ''}
       ${finished ? html`<p class="clock-note">${finishedText}</p>` : ''}
       <button type="button" class="btn ${finished ? 'btn-soft' : 'btn-primary'}" data-act="clock-in">${finished ? 'Clock back in' : 'Clock in'}</button>
       ${noLink ? '' : html`<button type="button" class="link link-center" data-act="add-hours">Forgot to clock in?</button>`}
@@ -1912,7 +1890,7 @@ function viewNothingToday(view) {
       ${closed ? html`<p class="muted">${closed}</p>` : awayToday(view) ? html`<p class="muted">You're marked out of town.</p>` : ''}
       ${next
         ? html`
-          <p class="muted">Next up: ${next.label}${next.start ? ' at ' + next.start : ''}.</p>
+          <p class="muted">Next up: ${next.label}.</p>
           <p class="muted">${plural(next.count, 'task')}</p>`
         : html`<p class="muted">Nothing coming up yet.</p>`}
     </div>`;
@@ -2056,16 +2034,14 @@ function viewDay(day, view) {
   }
   const open = S.schedOpen[day.date] !== undefined ? S.schedOpen[day.date] : isToday;
   const done = day.tasks.filter((task) => task.done).length;
-  const sub = [];
-  if (day.shift) sub.push(day.shift.start + ' - ' + day.shift.end);
-  sub.push(!done ? plural(day.tasks.length, 'task') : done === day.tasks.length ? 'All ' + done + ' done' : done + ' of ' + day.tasks.length + ' done');
+  const sub = !done ? plural(day.tasks.length, 'task') : done === day.tasks.length ? 'All ' + done + ' done' : done + ' of ' + day.tasks.length + ' done';
   return html`
     <li class="card day" data-key="day:${day.date}">
       <button type="button" class="day-head" aria-expanded="${open ? 'true' : 'false'}" data-act="day-toggle" data-date="${day.date}">
         <span class="day-tile"><span>${MONTHS[Number(day.date.slice(5, 7)) - 1]}</span><b>${Number(day.date.slice(8))}</b></span>
         <span class="day-info">
           <span class="day-name">${DAY_LONG[parts[0]] || day.label}${isToday ? html`<span class="chip">Today</span>` : ''}${day.off ? html`<span class="chip">Out of town</span>` : ''}</span>
-          <span class="day-sub">${sub.map((part) => html`<span>${part}</span>`)}</span>
+          <span class="day-sub"><span>${sub}</span></span>
         </span>
         ${I.chevron}
       </button>
@@ -2126,55 +2102,48 @@ function availWeeks(view) {
   }
   return weeks;
 }
+function dayHoursOf(current, key) {
+  return Number(current.dayHours[key]) || 0;
+}
 function selectedHours(current, data) {
   let count = 0;
   data.days.forEach((day) => {
-    if (dayBlocked(day)) return;
-    count += (current.slots[day.key] || []).length;
+    if (!dayBlocked(day)) count += dayHoursOf(current, day.key);
   });
   return count;
 }
 function dayBlocked(day) {
   return !!(day.closed || day.off);
 }
-function viewGrid(current, data) {
-  const days = data.days;
-  const has = (key, hour) => (current.slots[key] || []).indexOf(hour) >= 0;
+function viewDayHours(current, data) {
   return html`
-    <table class="grid" aria-label="Hours you can work">
-      <thead>
-        <tr>
-          <th scope="col"><span class="sr">Hour</span></th>
-          ${days.map((day) => html`
-            <th scope="col" class="${dayBlocked(day) ? 'off' : ''}">
-              <button type="button" class="g-day" data-act="slot-day" data-day="${day.key}" aria-label="${DAY_LONG[day.key]} ${day.label}. Tap for the whole day." ${dayBlocked(day) ? new Safe('disabled') : ''}>
-                <b>${day.key}</b><span>${day.label}</span>
-              </button>
-            </th>`)}
-        </tr>
-      </thead>
-      <tbody>
-        ${data.hours.map((hour) => html`
-          <tr>
-            <th scope="row">
-              <button type="button" class="g-hour" data-act="slot-hour" data-hour="${hour}" aria-label="${hourLabel(hour)}. Tap for every day.">${hourLabel(hour)}</button>
-            </th>
-            ${days.map((day) => {
-              const blocked = dayBlocked(day);
-              const on = !blocked && has(day.key, hour);
-              return html`
-                <td class="${blocked ? 'off' : ''}">
-                  <button type="button" class="g-cell" aria-pressed="${on ? 'true' : 'false'}" aria-label="${DAY_LONG[day.key]} ${hourLabel(hour)}" data-act="slot" data-day="${day.key}" data-hour="${hour}" ${blocked ? new Safe('disabled') : ''}></button>
-                </td>`;
-            })}
-          </tr>`)}
-      </tbody>
-    </table>`;
+    <ul class="card dh-list">
+      ${data.days.map((day) => {
+        const name = DAY_LONG[day.key];
+        const label = html`<div class="dh-day"><b>${name}</b><span>${monthDay(day.date)}</span></div>`;
+        if (dayBlocked(day)) {
+          return html`
+            <li class="dh-row off">
+              ${label}
+              ${day.closed ? html`<span class="chip chip-quiet chip-wrap">Closed: ${day.closed}</span>` : html`<span class="chip">Out of town</span>`}
+            </li>`;
+        }
+        const hours = dayHoursOf(current, day.key);
+        return html`
+          <li class="dh-row">
+            ${label}
+            <div class="dh-step" role="group" aria-label="Hours on ${name}">
+              <button type="button" class="step" data-act="day-step" data-day="${day.key}" data-delta="-0.5" aria-label="Half an hour less on ${name}" ${!hours ? new Safe('disabled') : ''}>${I.minus}</button>
+              <div class="dh-val ${hours ? '' : 'zero'}"><b>${hoursNumber(hours)}</b><span>${hoursWord(hours)}</span></div>
+              <button type="button" class="step" data-act="day-step" data-day="${day.key}" data-delta="0.5" aria-label="Half an hour more on ${name}" ${hours >= DAY_HOURS_MAX ? new Safe('disabled') : ''}>${I.plus}</button>
+            </div>
+          </li>`;
+      })}
+    </ul>`;
 }
 function viewAvailForm(view, week, data, current) {
   const count = selectedHours(current, data);
   const wanted = current.hoursWanted;
-  const blocked = data.days.filter(dayBlocked);
   return html`
     <p>
       <span class="strong">Week of ${week.label.split(' - ')[0]}.</span>
@@ -2202,20 +2171,15 @@ function viewAvailForm(view, week, data, current) {
       ${current.hoursError ? html`<p class="err form-err" role="alert">${current.hoursError}</p>` : ''}
     </div>
 
-    <section class="sec" aria-label="When you can work">
-      <div class="h2">When can you work?</div>
-      <p class="muted" style="margin-top:2px;font-size:15px">Tap the hours. Tap a day or a time to fill the whole line.</p>
-      <div class="grid-wrap">
-        ${viewGrid(current, data)}
-        <div class="grid-foot">
-          <div class="grid-count" role="status">${plural(count, 'hour')} selected</div>
-          ${count ? html`<button type="button" class="link" data-act="avail-clear">Clear all</button>` : ''}
-        </div>
+    <section class="sec" aria-label="Hours you can work each day">
+      <div class="h2">Hours I can work each day</div>
+      <p class="muted" style="margin-top:2px;font-size:15px">Just the hours. No exact times.</p>
+      ${viewDayHours(current, data)}
+      <div class="hours-foot">
+        <div class="hours-count" role="status">${hoursNumber(count)} ${hoursWord(count)} available</div>
+        ${count ? html`<button type="button" class="link" data-act="avail-clear">Clear all</button>` : ''}
       </div>
-      ${wanted && wanted > count ? html`<p class="grid-note">You want ${hoursNumber(wanted)} ${hoursWord(wanted)} but only picked ${count}.</p>` : ''}
-      ${blocked.length
-        ? html`<p class="off-note">${blocked.map((day, index) => html`${index ? ' ' : ''}${DAY_LONG[day.key]} is ${day.closed ? 'closed: ' + day.closed : 'marked out of town'}.`)}</p>`
-        : ''}
+      ${wanted && wanted > count ? html`<p class="hours-note">You want ${hoursNumber(wanted)} ${hoursWord(wanted)} but only have ${hoursNumber(count)} available.</p>` : ''}
     </section>
 
     <label class="field" style="margin-top:20px">
@@ -2537,7 +2501,6 @@ function viewMgrDay(day, board, view) {
               <span class="avatar avatar-sm">${initial(group.name)}</span>
               <span class="mg-who">
                 <span class="mg-name">${firstNameOrFull(group.name, board.staffNames)}</span>
-                ${group.shift ? html`<span class="mg-shift"><span class="nowrap">${group.shift.start}</span> - <span class="nowrap">${group.shift.end}</span></span>` : ''}
               </span>
               <span class="mg-count">${done} of ${group.tasks.length}<span class="word"> done</span></span>
               ${I.chevron}
@@ -2816,7 +2779,7 @@ function viewMgrHours() {
         <button type="button" class="btn btn-primary btn-sm" data-act="copy-payroll">Copy for payroll</button>
       </div>
       ${report.totalIssues ? html`<p class="issues" role="status">${plural(report.totalIssues, 'entry', 'entries')} still ${report.totalIssues === 1 ? 'needs' : 'need'} a fix.</p>` : ''}
-      ${totalLong ? html`<p class="quiet-note" role="status">${plural(totalLong, 'entry', 'entries')} ran much longer than scheduled. Worth a look before payroll.</p>` : ''}
+      ${totalLong ? html`<p class="quiet-note" role="status">${plural(totalLong, 'entry', 'entries')} ran much longer than that day's tasks. Worth a look before payroll.</p>` : ''}
       <div class="card">
         ${report.people.map((person) => {
           const open = !!S.mgr.open['hours|' + person.name];
@@ -2826,7 +2789,7 @@ function viewMgrHours() {
                 <span class="avatar avatar-sm">${initial(person.name)}</span>
                 <span class="hp-who">
                   <span class="hp-name">${firstNameOrFull(person.name, report.people.map((one) => one.name))}${person.issues ? html`<span class="chip chip-danger">${person.issues} to fix</span>` : ''}${longOnes(person) ? html`<span class="chip">${longOnes(person)} long</span>` : ''}</span>
-                  <span class="hp-sub">${plural(person.shifts, 'shift')}</span>
+                  <span class="hp-sub">${plural(person.shifts, 'entry', 'entries')}</span>
                 </span>
                 <span class="hp-total${Number(person.total) ? '' : ' is-zero'}">${hoursNumber(person.total)} <small>${Number(person.total) === 1 ? 'hr' : 'hrs'}</small></span>
                 ${I.chevron}
@@ -3199,7 +3162,7 @@ function toggleTask(id) {
     if (card) card.scrollIntoView({ block: 'nearest', behavior: SCROLL });
   }
 }
-function changeSlots(change) {
+function changeAvail(change) {
   const weekOf = S.avail.week;
   const current = availForm(weekOf);
   const data = S.avail.data[weekOf];
@@ -3210,14 +3173,12 @@ function changeSlots(change) {
   saveDraft(weekOf);
   render();
 }
-function setSlot(slots, key, hour, on) {
-  const list = slots[key] || [];
-  const at = list.indexOf(hour);
-  if (on && at < 0) list.push(hour);
-  if (!on && at >= 0) list.splice(at, 1);
-  list.sort((a, b) => a - b);
-  if (list.length) slots[key] = list;
-  else delete slots[key];
+function stepDay(key, delta) {
+  changeAvail((current) => {
+    const value = Math.min(DAY_HOURS_MAX, Math.max(0, dayHoursOf(current, key) + delta));
+    if (value) current.dayHours[key] = value;
+    else delete current.dayHours[key];
+  });
 }
 function stepHours(delta) {
   const weekOf = S.avail.week;
@@ -3244,13 +3205,13 @@ function markWeekSaved(weekOf, none, hoursWanted, late) {
 async function postAvailability(weekOf, none) {
   const current = availForm(weekOf);
   const data = S.avail.data[weekOf];
-  const slots = {};
+  const dayHours = {};
   if (!none) {
     data.days.forEach((day) => {
-      if (!dayBlocked(day) && current.slots[day.key] && current.slots[day.key].length) slots[day.key] = current.slots[day.key];
+      if (!dayBlocked(day) && dayHoursOf(current, day.key)) dayHours[day.key] = dayHoursOf(current, day.key);
     });
   }
-  const reply = await apiWrite('saveAvailability', { name: S.me, weekOf, slots, hoursWanted: none ? 0 : current.hoursWanted, notes: current.notes || '', none: !!none });
+  const reply = await apiWrite('saveAvailability', { name: S.me, weekOf, dayHours, hoursWanted: none ? 0 : current.hoursWanted, notes: current.notes || '', none: !!none });
   if (reply.ok === false) return reply;
   store.del(draftKey(weekOf));
   current.dirty = false;
@@ -3279,7 +3240,7 @@ async function saveAvailability() {
     return;
   }
   if (!selectedHours(current, data)) {
-    current.error = "Please pick at least one hour, or tap Can't work this week.";
+    current.error = "Please add hours for at least one day, or tap Can't work this week.";
     render();
     return;
   }
@@ -3537,8 +3498,8 @@ const A = {
     const weekOf = S.avail.week;
     const data = S.avail.data[weekOf];
     if (!data || !data.last) return;
-    changeSlots((current) => {
-      current.slots = JSON.parse(JSON.stringify(data.last.slots || {}));
+    changeAvail((current) => {
+      current.dayHours = JSON.parse(JSON.stringify(data.last.dayHours || {}));
       current.hoursWanted = data.last.hoursWanted;
       current.hoursError = '';
       delete current.hoursText;
@@ -3558,7 +3519,7 @@ const A = {
     render();
   },
   'avail-clear'() {
-    changeSlots((current) => { current.slots = {}; });
+    changeAvail((current) => { current.dayHours = {}; });
   },
   'avail-save'() { saveAvailability(); },
   'avail-another'() {
@@ -3576,25 +3537,12 @@ const A = {
     render();
     window.scrollTo(0, 0);
   },
-  slot(el) {
-    const hour = Number(el.dataset.hour);
-    const key = el.dataset.day;
-    changeSlots((current) => setSlot(current.slots, key, hour, el.getAttribute('aria-pressed') !== 'true'));
-  },
-  'slot-day'(el) {
-    const key = el.dataset.day;
-    changeSlots((current, data) => {
-      const all = data.hours.every((hour) => (current.slots[key] || []).indexOf(hour) >= 0);
-      data.hours.forEach((hour) => setSlot(current.slots, key, hour, !all));
-    });
-  },
-  'slot-hour'(el) {
-    const hour = Number(el.dataset.hour);
-    changeSlots((current, data) => {
-      const days = data.days.filter((day) => !dayBlocked(day));
-      const all = days.every((day) => (current.slots[day.key] || []).indexOf(hour) >= 0);
-      days.forEach((day) => setSlot(current.slots, day.key, hour, !all));
-    });
+  'day-step'(el) {
+    if (stepHeld) {
+      stepHeld = false;
+      return;
+    }
+    stepDay(el.dataset.day, Number(el.dataset.delta));
   },
   'hours-step'(el) {
     if (stepHeld) {
@@ -4229,11 +4177,13 @@ document.addEventListener('pointerdown', (event) => {
   if (!el || el.disabled) return;
   stepHeld = false;
   const delta = Number(el.dataset.delta);
+  const key = el.dataset.day;
+  const step = () => (key ? stepDay(key, delta) : stepHours(delta));
   el.addEventListener('pointerleave', stopHold, { once: true });
   stepHold = setTimeout(() => {
     stepHeld = true;
-    stepHours(delta);
-    stepHold = setInterval(() => stepHours(delta), 110);
+    step();
+    stepHold = setInterval(step, 110);
   }, 450);
 });
 ['pointerup', 'pointercancel'].forEach((name) => document.addEventListener(name, stopHold));

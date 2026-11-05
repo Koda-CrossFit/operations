@@ -51,6 +51,11 @@ async function launch() {
   throw new Error('Edge did not open its debugging port');
 }
 
+/* Taps the + on one day of the availability form, half an hour a tap. */
+async function addDayHours(page, day, hours) {
+  for (let i = 0; i < hours * 2; i++) await page.click(`[data-act=day-step][data-day=${day}][data-delta="0.5"]`);
+}
+
 class Page {
   constructor(socket) {
     this.socket = socket;
@@ -340,6 +345,7 @@ const SCENES = {
     await page.waitText('Hi, Ana');
     await page.waitFor('.task');
     await page.shot('phone-today');
+    check(!(await page.hasText('Scheduled')), 'the clock card has no scheduled time');
     check(await page.eval(`document.querySelector('.check').getAttribute('role') === 'checkbox'`), 'checks are role=checkbox');
     const check0 = await page.eval(`(() => { const b = document.querySelector('.check').getBoundingClientRect(); const row = document.querySelector('.task').getBoundingClientRect(); return { w: b.width, h: b.height, rowH: row.height }; })()`);
     check(check0.w >= 56, `the check zone is at least 56 wide (${check0.w})`);
@@ -492,6 +498,7 @@ const SCENES = {
     await page.waitText('This week');
     await page.waitFor('.day');
     await page.shot('phone-schedule');
+    check(!(await page.eval(`/\\d:\\d\\d/.test(Array.from(document.querySelectorAll('.day-sub')).map((el) => el.innerText).join())`)), 'the days on Schedule have no times');
     await page.shot('phone-schedule-full', { full: true });
     check(await page.eval(`document.querySelector('.day-head[aria-expanded=true]').innerText.includes('Today')`), "today's tasks start open");
     // Expand another day, and check a task there.
@@ -526,10 +533,12 @@ const SCENES = {
     await page.viewport(390, 844, true);
     await page.fresh('/?me=Ben&tab=availability&week=2026-11-23');
     await page.waitText('Week of Nov 23');
-    await page.waitFor('.grid');
+    await page.waitFor('.dh-list');
     await page.shot('phone-availability');
     await page.shot('phone-availability-full', { full: true });
-    check((await page.eval(`document.querySelectorAll('.g-cell').length`)) === 119, 'the grid has 7 by 17 cells');
+    check((await page.eval(`document.querySelectorAll('.dh-row').length`)) === 7, 'one row a day, Monday to Sunday');
+    check((await page.eval(`Array.from(document.querySelectorAll('.dh-day b')).map((el) => el.innerText).join()`)) === 'Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday', 'the days are in order, by name');
+    await page.waitText('0 hours available');
     check((await page.eval('document.body.innerText')).replace(/\u00A0/g, ' ').includes('Due Friday, Nov 20 at 7:00 AM.'), 'the deadline reads in full');
     await page.noSideScroll('availability');
 
@@ -540,53 +549,62 @@ const SCENES = {
     // Copy last week.
     await page.click('[data-act=avail-copy]');
     await page.waitText('Copied the week of Nov 16');
-    await page.waitText('6 hours selected');
+    await page.waitText('6 hours available');
     check((await page.eval(`document.querySelector('.step-input').value`)) === '5', 'copy brings the hours wanted too');
+    const dayValue = (day) => `document.querySelector('[data-act=day-step][data-day=${day}]').parentElement.querySelector('.dh-val b').innerText`;
+    check((await page.eval(dayValue('Wed'))) === '3' && (await page.eval(dayValue('Fri'))) === '3' && (await page.eval(dayValue('Mon'))) === '0', 'copy brings the hours for each day');
     await page.shot('phone-availability-copied');
 
-    // The stepper, the grid, and the toggles.
+    // The steppers.
     await page.click('[data-act=hours-step][data-delta="0.5"]');
     check((await page.eval(`document.querySelector('.step-input').value`)) === '5.5', 'plus adds a half hour');
     await page.click('[data-act=hours-step][data-delta="-0.5"]');
     check((await page.eval(`document.querySelector('.step-input').value`)) === '5', 'minus takes off a half hour');
     await page.click('[data-act=avail-clear]');
-    await page.waitText('0 hours selected');
-    await page.click('.g-cell[data-day=Mon][data-hour="9"]');
-    await page.waitText('1 hour selected');
-    check(await page.eval(`document.querySelector('.g-cell[data-day=Mon][data-hour="9"]').getAttribute('aria-pressed') === 'true'`), 'a tapped cell turns on');
-    await page.click('.g-cell[data-day=Mon][data-hour="9"]');
-    await page.waitText('0 hours selected');
-    await page.click('.g-day[data-day=Wed]');
-    await page.waitText('17 hours selected');
-    await page.click('.g-day[data-day=Wed]');
-    await page.waitText('0 hours selected');
-    await page.click('.g-hour[data-hour="10"]');
-    await page.waitText('6 hours selected');
-    await page.click('.g-hour[data-hour="10"]');
-    await page.waitText('0 hours selected');
-    await page.click('.g-cell[data-day=Tue][data-hour="9"]');
-    await page.click('.g-cell[data-day=Tue][data-hour="10"]');
-    await page.waitText('You want 5 hours but only picked 2.');
-    await page.shot('phone-availability-fewer');
-    check(await page.hasText('Tap the hours'), 'there is a short hint');
+    await page.waitText('0 hours available');
+    const minusOff = (day) => `document.querySelector('[data-act=day-step][data-day=${day}][data-delta="-0.5"]').disabled`;
+    check(await page.eval(minusOff('Mon')), 'a day at zero has nothing to take away');
+    await page.click('[data-act=day-step][data-day=Mon][data-delta="0.5"]');
+    await page.waitText('0.5 hours available');
+    check((await page.eval(dayValue('Mon'))) === '0.5', 'plus adds a half hour to that day');
+    check(!(await page.eval(minusOff('Mon'))), 'and minus wakes up');
+    await page.click('[data-act=day-step][data-day=Mon][data-delta="0.5"]');
+    await page.waitText('1 hour available');
+    await page.click('[data-act=day-step][data-day=Mon][data-delta="-0.5"]');
+    await page.waitText('0.5 hours available');
+    await page.click('[data-act=day-step][data-day=Mon][data-delta="-0.5"]');
+    await page.waitText('0 hours available');
 
-    // The header stays visible while scrolling.
-    const header = await page.eval(`(async () => {
-      document.querySelector('.grid tbody tr:nth-child(12)').scrollIntoView({ block: 'center' });
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      const head = document.querySelector('.grid thead th:nth-child(2)').getBoundingClientRect();
-      const bar = document.querySelector('.top').getBoundingClientRect();
-      const top = document.elementFromPoint(head.left + head.width / 2, head.top + head.height / 2);
-      return { headTop: head.top, barBottom: bar.bottom, isHead: !!top.closest('thead') };
-    })()`);
-    check(header.isHead && Math.abs(header.headTop - header.barBottom) < 2, `the day header sticks under the top bar (${header.headTop} vs ${header.barBottom})`);
+    // Holding keeps it going, up to the limit for a day, and the lift doesn't add one more.
+    const held = await page.eval(`(() => { const el = document.querySelector('[data-act=day-step][data-day=Wed][data-delta="0.5"]'); el.scrollIntoView({ block: 'center' }); const box = el.getBoundingClientRect(); return { x: box.left + box.width / 2, y: box.top + box.height / 2 }; })()`);
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: held.x, y: held.y });
+    await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: held.x, y: held.y, button: 'left', clickCount: 1 });
+    await sleep(4400);
+    check((await page.eval(dayValue('Wed'))) === '16', 'holding the plus stops at 16 hours');
+    check(await page.eval(`document.querySelector('[data-act=day-step][data-day=Wed][data-delta="0.5"]').disabled`), 'and the plus turns off there');
+    await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: held.x, y: held.y, button: 'left', clickCount: 1 });
+    await sleep(90);
+    check((await page.eval(dayValue('Wed'))) === '16', 'letting go changes nothing');
+    await page.click('[data-act=avail-clear]');
+    await page.waitText('0 hours available');
+
+    // Too few for what they want, and nothing at all.
+    await page.click('[data-act=hours-step][data-delta="0.5"]');
+    await page.click('[data-act=avail-save]');
+    await page.waitText("Please add hours for at least one day, or tap Can't work this week.");
+    await page.click('[data-act=hours-step][data-delta="-0.5"]');
+    await addDayHours(page, 'Tue', 2);
+    await page.waitText('You want 5 hours but only have 2 available.');
+    await page.shot('phone-availability-fewer');
+    check(await page.hasText('No exact times'), 'there is a short hint');
+    check(!(await page.eval(`/\\d (AM|PM)/.test(document.querySelector('.dh-list').innerText)`)), 'no times of day on the form');
+    const count = await page.eval(`(() => { document.querySelector('.dh-row:nth-child(4)').scrollIntoView({ block: 'center' }); const f = document.querySelector('.hours-foot').getBoundingClientRect(); const t = document.querySelector('.tabbar').getBoundingClientRect(); return { fBottom: f.bottom, tTop: t.top }; })()`);
+    check(count.fBottom <= count.tTop + 1, 'the live total stays above the tab bar while on the days');
     await page.shot('phone-availability-scrolled');
-    const count = await page.eval(`(() => { const f = document.querySelector('.grid-foot').getBoundingClientRect(); const t = document.querySelector('.tabbar').getBoundingClientRect(); return { fBottom: f.bottom, tTop: t.top }; })()`);
-    check(count.fBottom <= count.tTop + 1, 'the live count stays above the tab bar while on the grid');
 
     // A draft survives a reload.
     await page.goto('/');
-    await page.waitText('2 hours selected');
+    await page.waitText('2 hours available');
     check(true, 'a half-filled form survives a reload');
 
     // Save.
@@ -595,7 +613,7 @@ const SCENES = {
     await page.waitText("You're all set!");
     await page.shot('phone-availability-success');
     const saved = await (await fetch(`${SITE}/api?action=availability&name=Ben&weekOf=2026-11-23`)).json();
-    check(saved.hoursWanted === 5 && saved.slots.Tue.length === 2 && saved.notes === 'Mornings are <best>', 'the availability reached the server');
+    check(saved.hoursWanted === 5 && saved.dayHours.Tue === 2 && saved.notes === 'Mornings are <best>', 'the availability reached the server');
     await page.click('[data-act=avail-another]');
     await page.waitText('Week of Nov 30');
     check(await page.eval(`document.querySelector('.wk-chip[data-week="2026-11-23"]').innerText.includes('Filled in')`), 'the chip shows it is filled in');
@@ -612,20 +630,34 @@ const SCENES = {
     await page.waitText("You said you can't work");
     await page.shot('phone-availability-cant-work');
     await page.click('[data-act=avail-reopen]');
-    await page.waitFor('.grid');
+    await page.waitFor('.dh-list');
 
     // Thanksgiving is blocked out.
     await page.click('.wk-chip[data-week="2026-11-23"]');
-    await page.waitText('Thursday is closed: Thanksgiving.');
-    check(await page.eval(`document.querySelector('.g-cell[data-day=Thu]').disabled`), 'closed days cannot be picked');
+    await page.waitText('Closed: Thanksgiving');
+    check(await page.eval(`!document.querySelector('[data-act=day-step][data-day=Thu]') && document.querySelectorAll('.dh-row.off').length === 1`), 'closed days have no stepper');
+    await page.shot('phone-availability-closed-day');
 
     // Past the deadline.
     await setTime('2026-11-13T07:01:00-07:00');
     await page.clearSite();
     await page.goto('/?me=Cora&tab=availability&week=2026-11-16');
-    await page.waitFor('.grid');
+    await page.waitFor('.dh-list');
     check(await page.hasText('The deadline has passed. You can still change this and pick up any tasks that are left.'), 'past-due wording, for a week they already filled in');
     await page.shot('phone-availability-past-due');
+
+    // A draft saved by the old hour-by-hour form, and a saved copy of the old reply: the page just starts clean.
+    await page.resetWorld();
+    await page.clearSite();
+    await page.goto('/?me=Ben&tab=availability&week=2026-11-23');
+    await page.waitFor('.dh-list');
+    await page.eval(`localStorage.setItem('koda-ops.v1.draft.Ben.2026-11-23', JSON.stringify({ slots: { Mon: [9, 10] }, hoursWanted: 3, notes: 'Old draft', base: '' }))`);
+    await page.eval(`(() => { const key = 'koda-ops.v1.avail.Ben.2026-11-23'; const saved = JSON.parse(localStorage.getItem(key)); delete saved.dayHours; saved.slots = { Mon: [9] }; saved.hours = [9]; saved.last = { weekOf: '2026-11-16', slots: { Mon: [9] }, hoursWanted: 3 }; localStorage.setItem(key, JSON.stringify(saved)); })()`);
+    await page.goto('/');
+    await page.waitFor('.dh-list');
+    await page.waitText('0 hours available');
+    check(!(await page.hasText('Not saved yet.')), 'an old draft does not come back as unsaved work');
+    check(await page.eval(`localStorage.getItem('koda-ops.v1.draft.Ben.2026-11-23') === null`), 'and it is gone');
 
     // Set staff.
     await page.resetWorld();
@@ -633,7 +665,7 @@ const SCENES = {
     await page.goto('/?me=Gus&tab=availability');
     await page.waitText("You're automatically on the schedule every Thu, Fri, Sun. Nothing to fill out.");
     await page.shot('phone-availability-set-staff');
-    check(!(await page.eval(`!!document.querySelector('.grid')`)), 'set staff get no grid');
+    check(!(await page.eval(`!!document.querySelector('.dh-list')`)), 'set staff get no days to fill in');
     await page.setValue('[data-form=off][data-field=from]', '2026-11-20');
     check((await page.eval(`document.querySelector('[data-form=off][data-field=to]').value`)) === '2026-11-20', 'picking a from date fills the to date');
     await page.setValue('[data-form=off][data-field=to]', '2026-11-22');
@@ -861,7 +893,7 @@ const SCENES = {
     await page.waitFor('.day');
     await page.shot('desktop-schedule');
     await page.click('.side-link', { text: 'Availability' });
-    await page.waitFor('.grid');
+    await page.waitFor('.dh-list');
     await page.shot('desktop-availability');
     await page.shot('desktop-availability-full', { full: true });
     await page.noSideScroll('desktop availability');
@@ -928,11 +960,11 @@ const SCENES = {
 
     await page.clearSite();
     await page.goto('/?me=Ben&tab=availability&week=2026-11-23');
-    await page.waitFor('.grid');
+    await page.waitFor('.dh-list');
     await page.click('[data-act=hours-step][data-delta="0.5"]');
-    await page.click('.g-day[data-day=Mon]');
-    await page.click('.g-hour[data-hour="10"]');
-    await page.waitText('22 hours selected');
+    await addDayHours(page, 'Mon', 2);
+    await addDayHours(page, 'Fri', 1.5);
+    await page.waitText('3.5 hours available');
     await page.shot('desktop-availability-filled');
     await page.click('[data-act=avail-save]');
     await page.waitText("You're all set!");
@@ -968,14 +1000,13 @@ const SCENES = {
     await page.shot('narrow-schedule');
     await page.noSideScroll('320 schedule');
     await page.click('.tab[data-tab=availability]');
-    await page.waitFor('.grid');
+    await page.waitFor('.dh-list');
     await page.shot('narrow-availability');
     await page.shot('narrow-availability-full', { full: true });
     await page.noSideScroll('320 availability');
-    const cell = await page.eval(`(() => { const box = document.querySelector('.g-cell').getBoundingClientRect(); const table = document.querySelector('.grid').getBoundingClientRect(); return { w: box.width, h: box.height, tableRight: table.right, page: document.documentElement.clientWidth }; })()`);
-    check(cell.w >= 34, `320 wide: grid cells are at least 34 wide (${cell.w})`);
-    check(cell.h >= 36, `320 wide: grid cells are at least 36 tall (${cell.h})`);
-    check(cell.tableRight <= cell.page - 15, `320 wide: the grid stays inside the gutter (${cell.tableRight})`);
+    const stepper = await page.eval(`(() => { const box = document.querySelector('.dh-step .step').getBoundingClientRect(); const row = document.querySelector('.dh-row').getBoundingClientRect(); const last = document.querySelector('.dh-step .step:last-child').getBoundingClientRect(); return { w: box.width, h: box.height, last: last.right, rowRight: row.right, page: document.documentElement.clientWidth }; })()`);
+    check(stepper.w >= 44 && stepper.h >= 44, `320 wide: the day steppers are big enough to tap (${stepper.w} by ${stepper.h})`);
+    check(stepper.last <= stepper.rowRight && stepper.rowRight <= stepper.page - 15, `320 wide: the days stay inside the gutter (${stepper.last}, ${stepper.rowRight})`);
     await page.click('.tab[data-tab=hours]');
     await page.waitText('hours in November');
     await page.shot('narrow-hours');
@@ -1052,16 +1083,16 @@ const SCENES = {
     await fetch(`${SITE}/dev/tick`);
     await page.clearSite();
     await page.goto('/?me=Ben&tab=availability&week=2026-11-23');
-    await page.waitFor('.grid');
+    await page.waitFor('.dh-list');
     check(await page.hasText('The deadline has passed. You can still fill this out and pick up any tasks that are left.'), 'past the deadline, the page says so');
     check(await page.eval(`document.querySelector('.wk-chip[aria-pressed=true]').innerText.includes('Past due')`), 'the chip says past due');
     await page.click('[data-act=hours-step][data-delta="0.5"]');
     await page.click('[data-act=hours-step][data-delta="0.5"]');
     await page.click('[data-act=hours-step][data-delta="0.5"]');
     await page.click('[data-act=hours-step][data-delta="0.5"]');
-    await page.click('.g-day[data-day=Mon]');
-    await page.click('.g-day[data-day=Tue]');
-    await page.waitText('34 hours selected');
+    await addDayHours(page, 'Mon', 2);
+    await addDayHours(page, 'Tue', 2);
+    await page.waitText('4 hours available');
     await page.waitText('Not saved yet.');
     await page.click('[data-act=avail-save]');
     await page.waitText("You're all set!");
@@ -1073,7 +1104,7 @@ const SCENES = {
     await page.resetWorld();
     await page.clearSite();
     await page.goto('/?me=Dev&tab=availability&week=2026-11-09');
-    await page.waitFor('.grid');
+    await page.waitFor('.dh-list');
     check(await page.eval(`document.querySelector('.wk-chip[aria-pressed=true]').innerText.includes('Nov 9 - 15')`), 'a link to the current week still opens it');
     check((await page.eval(`document.querySelectorAll('.wk-chip').length`)) === 7, 'it adds a chip for that week');
     await page.noSideScroll('current week link');
@@ -1147,10 +1178,10 @@ const SCENES = {
 
     await page.clearSite();
     await page.goto('/?me=Ana&tab=availability');
-    await page.waitFor('.grid');
+    await page.waitFor('.dh-list');
     await settle('opening Availability', 2);
     await page.goto('/');
-    await page.waitFor('.grid');
+    await page.waitFor('.dh-list');
     await settle('reloading Availability', 2);
 
     await page.clearSite();
@@ -1175,7 +1206,7 @@ const SCENES = {
 
     await page.clearSite();
     await page.goto('/?me=Ben&tab=availability&week=2026-11-24');
-    await page.waitFor('.grid');
+    await page.waitFor('.dh-list');
     check(!(await page.hasText('A week has to start on a Monday')), 'a link to a week that is not a Monday is ignored');
     check(await page.eval(`document.querySelector('.wk-chip[aria-pressed=true]').innerText.includes('Nov 16')`), 'and lands on the next week');
 
@@ -1201,13 +1232,13 @@ const SCENES = {
     check(await page.eval(`document.querySelector('.step-unit').innerText === 'hour'`), 'one hour says hour');
 
     // After saving and walking away, the form is back, not yesterday's You're all set!
-    await page.click('.g-day[data-day=Mon]');
+    await addDayHours(page, 'Mon', 1);
     await page.click('[data-act=avail-save]');
     await page.waitText("You're all set!");
     await page.click('.tab[data-tab=today]');
     await page.waitText('Hi, Ben');
     await page.click('.tab[data-tab=availability]');
-    await page.waitFor('.grid');
+    await page.waitFor('.dh-list');
     check(!(await page.hasText("You're all set!")), 'coming back to Availability shows the form');
   },
 
@@ -1676,7 +1707,7 @@ const SCENES = {
     await page.resetWorld();
     await page.clearSite();
     await page.goto('/?me=Ana&tab=availability&week=2026-11-09');
-    await page.waitFor('.grid');
+    await page.waitFor('.dh-list');
     await page.click('[data-act=avail-save]');
     await page.waitText("You're all set!");
     await page.waitText('We saved your changes.');
@@ -1689,12 +1720,12 @@ const SCENES = {
     await setTime('2026-11-24T10:00:00-07:00');
     await page.clearSite();
     await page.goto('/?me=Ben&tab=availability');
-    await page.waitFor('.grid');
+    await page.waitFor('.dh-list');
     check(await page.eval(`document.querySelector('.wk-chip').innerText.includes('Nov 23 - 29') && document.querySelector('.wk-chip').innerText.includes('Past due')`), 'the week under way is the first chip, past due');
     check(await page.eval(`document.querySelector('.wk-chip[aria-pressed=true]').innerText.includes('Nov 30')`), 'but the page still lands on the week coming up');
     await page.noSideScroll('review week under way');
 
-    // Manage > Hours points out a shift far past what was scheduled.
+    // Manage > Hours points out an entry far past that day's tasks.
     await page.resetWorld();
     await api({ action: 'hoursAdd', name: 'Ben', date: '2026-11-09', start: '08:00', end: '17:30', note: '' });
     await page.clearSite();
@@ -1702,7 +1733,8 @@ const SCENES = {
     await page.goto('/?me=Max&tab=manage');
     await page.waitText('On the clock now');
     await page.click('.seg button', { text: 'Hours' });
-    await page.waitText('1 entry ran much longer than scheduled.');
+    await page.waitText("1 entry ran much longer than that day's tasks.");
+    check(!(await page.hasText('shift')), 'Manage Hours has no shift wording');
     check(await page.hasText('1 long'), 'the person shows it too');
     await page.click('.hp-head[data-key2="hours|Ben"]');
     await page.waitText('9.5 hrs');

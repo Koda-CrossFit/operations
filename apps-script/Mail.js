@@ -214,7 +214,7 @@ function scheduleSubject_(weekOf) {
   return 'Your Koda schedule: week of ' + monthDay_(weekOf);
 }
 
-/** Each working day with its time and tasks. */
+/** Each working day with its tasks. */
 function mailYourWeek_(person, weekOf) {
   var rows = scheduleForWeek_(weekOf).filter(function (row) {
     return row.name === person.name;
@@ -227,9 +227,8 @@ function mailYourWeek_(person, weekOf) {
         })
       );
       if (!dayRows.length) return '';
-      var shift = shiftFor_(person.name, date);
       return (
-        subhead_(dayLabel_(date) + (shift ? ', ' + shift.start + ' - ' + shift.end : '')) +
+        subhead_(dayLabel_(date)) +
         list_(
           dayRows.map(function (row) {
             return row.title;
@@ -391,7 +390,7 @@ function mailMonthlyHours_(month) {
       )
     : para_('Nothing needs a fix.');
   if (longOnes.length) {
-    body += subhead_('Much longer than scheduled');
+    body += subhead_("Much longer than that day's tasks");
     body += list_(
       longOnes.map(function (entry) {
         return entry.name + ': ' + dayLabel_(entry.date) + ', ' + timeLabel_(entry.inAt) + ' - ' + timeLabel_(entry.outAt) + ', ' + entryHours_(entry) + ' hours';

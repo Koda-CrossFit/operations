@@ -1,11 +1,11 @@
 /**
  * Scheduler.js: who does which task on which day (SPEC section 6).
  *
- * Pure functions only: no Google services, no clock, no time zones. "Today" and the
- * time of day arrive as data. Dates are 'YYYY-MM-DD' strings and all date math goes
- * through Date.UTC, so daylight saving can never shift a day. Same input, same output.
+ * Pure functions only: no Google services, no clock, no time zones. "Today" arrives as
+ * data. Dates are 'YYYY-MM-DD' strings and all date math goes through Date.UTC, so
+ * daylight saving can never shift a day. Same input, same output.
  *
- * Public: schedPriorityScore, schedBuildWeek, schedFillOpen, schedShifts.
+ * Public: schedPriorityScore, schedBuildWeek, schedFillOpen.
  *
  * How it works: everything that needs a person becomes a "job", which is the Row that
  * goes back to the caller plus what matching needs to know about it (preferred date,
@@ -18,12 +18,8 @@ var SCHED_DAYS_ = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 var SCHED_HOURS_TOLERANCE_ = 15; // minutes past someone's requested hours that still fit
 var SCHED_SHORT_TRIP_ = 30; // a person-day with less work than this is a short trip (rule 9)
 var SCHED_MIN_PARTIAL_ = 30; // room needed to start a one-off that can't fit whole (rule 7)
-var SCHED_SHIFT_STEP_ = 15; // shift end times round up to this (rule 11)
-var SCHED_LATEST_END_ = 23 * 60 + 45; // a stacked-up day can't produce a time past midnight
 var SCHED_NO_DAY_FLEX_ = 999; // a one-off with no day sorts after everything movable (rule 4)
 var SCHED_NO_ORDER_ = 9999; // one-offs sort after listed tasks at the "task order" step
-var SCHED_WHOLE_DAY_ = { start: 5, end: 22 }; // every hour on the availability grid: someone tapped the day header, meaning "any time"
-var SCHED_ANY_TIME_START_ = 9 * 60; // an "any time" day shows this start, not 5 AM
 
 /* ------------------------------------------------------------------ public ------ */
 
@@ -37,8 +33,8 @@ function schedPriorityScore(priority) {
 
 /**
  * Matches a whole week. `rows` holds only the new rows; `locked` rows are never
- * repeated or changed, but they do count in `shifts` and `usage`.
- * -> {rows, shifts, unfilled, usage}
+ * repeated or changed, but they do count in `usage`.
+ * -> {rows, unfilled, usage}
  */
 function schedBuildWeek(input) {
   var ctx = schedContext_(input);
@@ -55,7 +51,7 @@ function schedBuildWeek(input) {
  * `input.locked` counted against capacity. Nobody else's work moves, and every open
  * row comes back, either with a name or in `unfilled`. Unknown fields on an open row
  * (a sheet row number, say) are kept, so the caller can match results to its records.
- * -> {rows, shifts, unfilled, usage}
+ * -> {rows, unfilled, usage}
  */
 function schedFillOpen(input) {
   var ctx = schedContext_(input);
@@ -64,44 +60,6 @@ function schedFillOpen(input) {
   });
   schedRunPool_(ctx, jobs);
   return schedResult_(ctx, jobs);
-}
-
-/**
- * Rule 11. One shift per person-day with rows, when that person has availability that
- * day: starts at the start of their largest block (or 9 AM if they marked the whole day),
- * ends at start + total minutes, rounded up to the next 15. `minutes` is the shift's
- * length, end minus start. Set staff and managers have no availability, so they never get one.
- * -> [{name, date, start:'09:00', end:'11:30', minutes}], by date then name.
- */
-function schedShifts(rows, availability, weekOf) {
-  var weekEnd = schedAddDays_(weekOf, 6);
-  var totals = Object.create(null);
-  (rows || []).forEach(function (row) {
-    if (!row.name || !row.date || row.date < weekOf || row.date > weekEnd) return;
-    var id = row.date + '|' + row.name;
-    if (!totals[id]) totals[id] = { name: row.name, date: row.date, minutes: 0 };
-    totals[id].minutes += schedMinutes_(row.minutes);
-  });
-  var shifts = [];
-  Object.keys(totals).sort().forEach(function (id) {
-    var total = totals[id];
-    var entry = (availability || {})[total.name];
-    if (!entry || entry.none) return;
-    var block = schedLargestBlock_(entry.slots, schedDayKey_(total.date), null);
-    if (!block) return;
-    var wholeDay = block.start === SCHED_WHOLE_DAY_.start && block.end === SCHED_WHOLE_DAY_.end;
-    var start = wholeDay ? SCHED_ANY_TIME_START_ : block.start * 60;
-    var end = Math.ceil((start + total.minutes) / SCHED_SHIFT_STEP_) * SCHED_SHIFT_STEP_;
-    end = Math.min(end, SCHED_LATEST_END_);
-    shifts.push({
-      name: total.name,
-      date: total.date,
-      start: schedClock_(start),
-      end: schedClock_(end),
-      minutes: end - start,
-    });
-  });
-  return shifts;
 }
 
 /* ------------------------------------------------------- setting up the week ------ */
@@ -114,7 +72,6 @@ function schedContext_(input) {
     weekEnd: dates[6],
     dates: dates,
     today: input.today || '',
-    nowMinutes: schedNowMinutes_(input.nowMinutes),
     availability: input.availability || {},
     timeOff: input.timeOff || [],
     closed: schedSet_(input.closedDays),
@@ -506,7 +463,7 @@ function schedFits_(ctx, name, date, minutes) {
 }
 
 /**
- * Minutes this person can still take on this date: what's left of their largest block
+ * Minutes this person can still take on this date: what's left of the hours they offered
  * that day and of their week, whichever is smaller. Negative means none at all.
  */
 function schedRoom_(ctx, name, date) {
@@ -514,12 +471,11 @@ function schedRoom_(ctx, name, date) {
   if (!entry || entry.none || schedIsAway_(ctx, name, date)) return -1;
   var wanted = Number(entry.hoursWanted);
   if (!(wanted > 0)) return -1;
-  var now = date === ctx.today ? ctx.nowMinutes : null;
-  var block = schedLargestBlock_(entry.slots, schedDayKey_(date), now);
-  if (!block) return -1;
+  var offered = Number((entry.dayHours || {})[schedDayKey_(date)]);
+  if (!(offered > 0)) return -1;
   var person = ctx.ledger[name];
   var day = person && person.days[date];
-  var dayLeft = (block.end - block.start) * 60 - (day ? day.minutes : 0);
+  var dayLeft = offered * 60 - (day ? day.minutes : 0);
   var weekLeft = wanted * 60 + SCHED_HOURS_TOLERANCE_ - (person ? person.week : 0);
   return Math.min(dayLeft, weekLeft);
 }
@@ -712,23 +668,8 @@ function schedResult_(ctx, jobs) {
     });
   var everyone = ctx.locked.concat(rows);
 
-  // Rule 11: Set staff get no shift times, even if a stray availability entry exists.
-  var noShift = schedSet_(
-    ctx.active
-      .filter(function (person) {
-        return !schedIsFlexible_(person);
-      })
-      .map(function (person) {
-        return person.name;
-      })
-  );
-  var shiftRows = everyone.filter(function (row) {
-    return !noShift[row.name];
-  });
-
   return {
     rows: rows,
-    shifts: schedShifts(shiftRows, ctx.availability, ctx.weekOf),
     unfilled: rows.filter(function (row) {
       return !row.name;
     }),
@@ -757,32 +698,6 @@ function schedUsage_(ctx, rows) {
   return usage;
 }
 
-/* ------------------------------------------------------------- availability ------ */
-
-/** {Mon:[9,10,11,14]} and 'Mon' -> [{start:9, end:12}, {start:14, end:15}]. */
-function schedBlocks_(slots, dayKey) {
-  var hours = ((slots && slots[dayKey]) || []).map(Number).sort(function (a, b) {
-    return a - b;
-  });
-  var blocks = [];
-  hours.forEach(function (hour) {
-    var last = blocks[blocks.length - 1];
-    if (last && hour <= last.end) last.end = Math.max(last.end, hour + 1);
-    else blocks.push({ start: hour, end: hour + 1 });
-  });
-  return blocks;
-}
-
-/** The longest block that day, earliest on a tie. With nowMinutes, blocks already over don't count. */
-function schedLargestBlock_(slots, dayKey, nowMinutes) {
-  var best = null;
-  schedBlocks_(slots, dayKey).forEach(function (block) {
-    if (nowMinutes !== null && block.end * 60 <= nowMinutes) return;
-    if (!best || block.end - block.start > best.end - best.start) best = block;
-  });
-  return best;
-}
-
 /* ------------------------------------------------------------------ helpers ------ */
 
 function schedDateParts_(date) {
@@ -802,19 +717,8 @@ function schedDayKey_(date) {
   return SCHED_DAYS_[(sundayFirst + 6) % 7];
 }
 
-function schedClock_(minutes) {
-  var pad = function (n) {
-    return (n < 10 ? '0' : '') + n;
-  };
-  return pad(Math.floor(minutes / 60)) + ':' + pad(minutes % 60);
-}
-
 function schedMinutes_(value) {
   return Math.max(0, Number(value) || 0);
-}
-
-function schedNowMinutes_(value) {
-  return value === null || value === undefined || value === '' ? null : Number(value);
 }
 
 function schedFlexDays_(task) {
@@ -847,5 +751,5 @@ function schedIndex_(list) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { schedPriorityScore, schedBuildWeek, schedFillOpen, schedShifts };
+  module.exports = { schedPriorityScore, schedBuildWeek, schedFillOpen };
 }

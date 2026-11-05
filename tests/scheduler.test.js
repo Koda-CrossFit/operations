@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const { schedPriorityScore, schedBuildWeek, schedFillOpen, schedShifts } = require('../apps-script/Scheduler.js');
+const { schedPriorityScore, schedBuildWeek, schedFillOpen } = require('../apps-script/Scheduler.js');
 const { SEED_TASKS_ } = require('../apps-script/SeedTasks.js');
 const { MON_SAT, STAFF, avail, buildInput, oneOff, row, task, workedExampleAvailability } = require('../dev/fixtures.js');
 
@@ -135,22 +135,14 @@ test('worked example: the exact minutes per person per day', () => {
   assert.deepStrictEqual(usage.Dev.byDate, {});
 });
 
-test('worked example: usage and shifts agree, and nobody passes their block or requested hours', () => {
-  const { shifts, usage } = run({ availability: workedExampleAvailability() });
+test('worked example: nobody passes their hours for the day or the hours they asked for', () => {
+  const { usage } = run({ availability: workedExampleAvailability() });
   assert.deepStrictEqual(usage.Ana, { minutes: 340, wantedMinutes: 360, byDate: { [MON]: 125, [WED]: 85, [FRI]: 130 } });
   assert.deepStrictEqual(usage.Ben, { minutes: 185, wantedMinutes: 240, byDate: { [TUE]: 100, [THU]: 85 } });
   assert.deepStrictEqual(usage.Cora, { minutes: 55, wantedMinutes: 1200, byDate: { [SAT]: 55 } });
   assert.ok(usage.Ana.minutes <= usage.Ana.wantedMinutes + 15);
   assert.ok(usage.Ben.minutes <= usage.Ben.wantedMinutes + 15);
   Object.values(usage.Ana.byDate).concat(Object.values(usage.Ben.byDate)).forEach((m) => assert.ok(m <= 180));
-  assert.deepStrictEqual(shifts, [
-    { name: 'Ana', date: MON, start: '09:00', end: '11:15', minutes: 135 },
-    { name: 'Ben', date: TUE, start: '10:00', end: '11:45', minutes: 105 },
-    { name: 'Ana', date: WED, start: '09:00', end: '10:30', minutes: 90 },
-    { name: 'Ben', date: THU, start: '10:00', end: '11:30', minutes: 90 },
-    { name: 'Ana', date: FRI, start: '09:00', end: '11:15', minutes: 135 },
-    { name: 'Cora', date: SAT, start: '08:00', end: '09:00', minutes: 60 },
-  ]);
 });
 
 test('worked example with a set person out Thursday: Ben covers it, and the rest of the week holds', () => {
@@ -187,7 +179,7 @@ test('rows have exactly the fields in the spec', () => {
 test('rank order: the best-ranked person who fits gets it, whatever order the staff list is in', () => {
   const input = buildInput({
     tasks: [task({ id: 'X1', minutes: 60 })],
-    availability: { Dev: avail(6, ['Mon'], 9, 12), Ben: avail(6, ['Mon'], 9, 12), Ana: avail(6, ['Mon'], 9, 12) },
+    availability: { Dev: avail(6, ['Mon'], 3), Ben: avail(6, ['Mon'], 3), Ana: avail(6, ['Mon'], 3) },
   });
   input.staff.reverse();
   assert.strictEqual(schedBuildWeek(input).rows[0].name, 'Ana');
@@ -197,14 +189,14 @@ test('rank order: work passes down the ranks only when someone better is full', 
   const tasks = ['X1', 'X2', 'X3', 'X4', 'X5'].map((id) => task({ id, minutes: 60 }));
   const { rows } = run({
     tasks,
-    availability: { Ana: avail(1, ['Mon'], 8, 16), Ben: avail(2, ['Mon'], 8, 16), Cora: avail(10, ['Mon'], 8, 16), Dev: avail(10, ['Mon'], 8, 16) },
+    availability: { Ana: avail(1, ['Mon'], 8), Ben: avail(2, ['Mon'], 8), Cora: avail(10, ['Mon'], 8), Dev: avail(10, ['Mon'], 8) },
   });
   assert.deepStrictEqual(minutesByPersonDay(rows), { Ana: { Mon: 60 }, Ben: { Mon: 120 }, Cora: { Mon: 120 } });
 });
 
 test('rank order: ranks and types read from a sheet still work, and a tie goes by name', () => {
   const flexible = (name, rank, type) => ({ name, rank, type, active: true, setDays: [], setTasks: [] });
-  const availability = { Bea: avail(6, ['Mon'], 9, 12), Zed: avail(6, ['Mon'], 9, 12) };
+  const availability = { Bea: avail(6, ['Mon'], 3), Zed: avail(6, ['Mon'], 3) };
   const winner = (staff) => run({ tasks: [task()], staff, availability }).rows[0].name;
   assert.strictEqual(winner([flexible('Zed', '9', 'flexible'), flexible('Bea', '10', 'FLEXIBLE')]), 'Zed', '9 beats 10 as a number, not as text');
   assert.strictEqual(winner([flexible('Zed', 5, 'Flexible'), flexible('Bea', 5, 'Flexible')]), 'Bea');
@@ -216,7 +208,7 @@ test('rank order: ranks and types read from a sheet still work, and a tie goes b
 test('rank order: Set people and managers are never pulled in as flexible help', () => {
   const { rows } = run({
     tasks: [task({ id: 'X1' })],
-    availability: { Gus: avail(10, ['Mon'], 8, 16), Max: avail(10, ['Mon'], 8, 16) },
+    availability: { Gus: avail(10, ['Mon'], 8), Max: avail(10, ['Mon'], 8) },
   });
   assert.strictEqual(rows[0].name, '');
 });
@@ -225,7 +217,7 @@ test('rank order: Set people and managers are never pulled in as flexible help',
 
 test('priority order: when people run short, C is what goes uncovered, not B', () => {
   // Ana alone, 7 hours: 420 + 15 = 435 minutes, which is exactly all the B work in the seed list.
-  const { rows, unfilled, usage } = run({ availability: { Ana: avail(7, MON_SAT, 9, 12) } });
+  const { rows, unfilled, usage } = run({ availability: { Ana: avail(7, MON_SAT, 3) } });
   assert.strictEqual(usage.Ana.minutes, 435);
   assert.ok(unfilled.length > 0);
   unfilled.forEach((r) => assert.strictEqual(r.priority, 'C', `${r.key} should not be uncovered`));
@@ -241,7 +233,7 @@ test('priority order: higher priority wins the last of the room, whatever order 
       task({ id: 'TOP', priority: 'A+++++', minutes: 60, order: 3 }),
       task({ id: 'BLANK', priority: '', minutes: 60, order: 0 }),
     ],
-    availability: { Ana: avail(1, ['Mon'], 9, 10) },
+    availability: { Ana: avail(1, ['Mon'], 1) },
   });
   assert.strictEqual(byTask(rows, 'TOP')[0].name, 'Ana');
   ['LOW', 'MID', 'BLANK'].forEach((id) => assert.strictEqual(byTask(rows, id)[0].name, ''));
@@ -253,22 +245,22 @@ test('pool order: same priority, then flex low to high, then date, then minutes 
     task({ id: 'FLEX0', days: ['Mon'], flexDays: 0, minutes: 30, order: 9 }),
     task({ id: 'FLEX1', days: ['Mon'], flexDays: 1, minutes: 60, order: 1 }),
   ];
-  let got = run({ tasks: candidates, availability: { Ana: avail(1, ['Mon'], 9, 10) } }).rows;
+  let got = run({ tasks: candidates, availability: { Ana: avail(1, ['Mon'], 1) } }).rows;
   assert.strictEqual(byTask(got, 'FLEX0')[0].name, 'Ana', 'lower flex goes first even though it is smaller');
 
   const byDate = [task({ id: 'LATE', days: ['Tue'], flexDays: 1, minutes: 60, order: 1 }), task({ id: 'EARLY', days: ['Mon'], flexDays: 1, minutes: 60, order: 2 })];
-  got = run({ tasks: byDate, availability: { Ana: avail(0.75, ['Mon', 'Tue'], 9, 10) } }).rows;
+  got = run({ tasks: byDate, availability: { Ana: avail(0.75, ['Mon', 'Tue'], 1) } }).rows;
   assert.strictEqual(byTask(got, 'EARLY')[0].name, 'Ana', 'earlier date goes first');
   assert.strictEqual(byTask(got, 'LATE')[0].name, '');
 
   const bySize = [task({ id: 'SMALL', minutes: 30, order: 1 }), task({ id: 'BIG', minutes: 45, order: 2 })];
-  got = run({ tasks: bySize, availability: { Ana: avail(1, ['Mon'], 9, 10) } }).rows;
+  got = run({ tasks: bySize, availability: { Ana: avail(1, ['Mon'], 1) } }).rows;
   assert.strictEqual(byTask(got, 'BIG')[0].name, 'Ana', 'more minutes go first');
   assert.strictEqual(byTask(got, 'SMALL')[0].name, '');
 
   // The IDs run the opposite way from the order, so only the order can explain the winner.
   const byOrder = [task({ id: 'AAA', minutes: 45, order: 2 }), task({ id: 'ZZZ', minutes: 45, order: 1 })];
-  got = run({ tasks: byOrder, availability: { Ana: avail(1, ['Mon'], 9, 10) } }).rows;
+  got = run({ tasks: byOrder, availability: { Ana: avail(1, ['Mon'], 1) } }).rows;
   assert.strictEqual(byTask(got, 'ZZZ')[0].name, 'Ana', 'task order breaks the last tie');
   assert.strictEqual(byTask(got, 'AAA')[0].name, '');
 });
@@ -277,7 +269,7 @@ test('pool order: a one-off has no task order, so a listed task goes first when 
   const { rows } = run({
     tasks: [task({ id: 'ZZZ', minutes: 45, days: ['Mon'], order: 500 })],
     oneOffs: [oneOff({ id: 'AAA', day: 'Mon', minutes: 45 })],
-    availability: { Ana: avail(1, ['Mon'], 9, 10) },
+    availability: { Ana: avail(1, ['Mon'], 1) },
   });
   assert.strictEqual(byKey(rows, 'task|ZZZ|' + MON).name, 'Ana');
   assert.strictEqual(byKey(rows, 'oneoff|AAA').name, '');
@@ -287,7 +279,7 @@ test('pool order: a one-off with no day goes after every movable task of the sam
   const { rows } = run({
     tasks: [task({ id: 'R1', minutes: 60, days: ['Mon'], flexDays: 6 })],
     oneOffs: [oneOff({ minutes: 60 })],
-    availability: { Ana: avail(1, ['Mon'], 9, 10) },
+    availability: { Ana: avail(1, ['Mon'], 1) },
   });
   assert.strictEqual(byKey(rows, 'task|R1|' + MON).name, 'Ana');
   assert.strictEqual(byKey(rows, 'oneoff|O1').name, '', 'only 15 minutes of her week are left, under the 30 a partial needs');
@@ -296,7 +288,7 @@ test('pool order: a one-off with no day goes after every movable task of the sam
 /* ----------------------------------------------------------- recurring tasks ---- */
 
 test('recurring tasks: one row per listed day, and inactive or set-only tasks make none', () => {
-  const availability = { Ana: avail(5, MON_SAT, 9, 12) };
+  const availability = { Ana: avail(5, MON_SAT, 3) };
   const { rows } = run({ tasks: [task({ id: 'X1', days: ['Mon', 'Thu'] })], availability });
   assert.deepStrictEqual(rows.map((r) => [r.taskId, r.date, r.source]), [['X1', MON, 'auto'], ['X1', THU, 'auto']]);
   assert.deepStrictEqual(run({ tasks: [task({ active: false })], availability }).rows, []);
@@ -304,27 +296,27 @@ test('recurring tasks: one row per listed day, and inactive or set-only tasks ma
 });
 
 test('recurring tasks: numbers read from a sheet as text still work, and blank minutes count as none', () => {
-  const placed = placeOne({ minutes: '45', days: ['Wed'], flexDays: '1' }, { Ana: avail('5', ['Thu'], 9, 12) });
+  const placed = placeOne({ minutes: '45', days: ['Wed'], flexDays: '1' }, { Ana: avail('5', ['Thu'], 3) });
   assert.deepStrictEqual([placed.name, placed.date, placed.minutes], ['Ana', THU, 45]);
-  const blank = placeOne({ minutes: '', flexDays: '' }, { Ana: avail(5, ['Mon'], 9, 12) });
+  const blank = placeOne({ minutes: '', flexDays: '' }, { Ana: avail(5, ['Mon'], 3) });
   assert.deepStrictEqual([blank.name, blank.date, blank.minutes], ['Ana', MON, 0]);
 });
 
 /* --------------------------------------------------------------- capacity caps ---- */
 
 test('hours cap: requested hours plus 15 minutes of tolerance, and not a minute more', () => {
-  const availability = { Ana: avail(1, ['Mon'], 8, 16) };
+  const availability = { Ana: avail(1, ['Mon'], 8) };
   assert.strictEqual(placeOne({ minutes: 75 }, availability).name, 'Ana');
   assert.strictEqual(placeOne({ minutes: 76 }, availability).name, '');
 });
 
 test('hours cap: half hours count, and it adds up across the whole week', () => {
-  assert.strictEqual(placeOne({ minutes: 105 }, { Ana: avail(1.5, ['Mon'], 8, 16) }).name, 'Ana');
-  assert.strictEqual(placeOne({ minutes: 106 }, { Ana: avail(1.5, ['Mon'], 8, 16) }).name, '');
+  assert.strictEqual(placeOne({ minutes: 105 }, { Ana: avail(1.5, ['Mon'], 8) }).name, 'Ana');
+  assert.strictEqual(placeOne({ minutes: 106 }, { Ana: avail(1.5, ['Mon'], 8) }).name, '');
 
   const { rows, usage } = run({
     tasks: [task({ id: 'X1', minutes: 60, days: ['Mon'] }), task({ id: 'X2', minutes: 15, days: ['Tue'] }), task({ id: 'X3', minutes: 5, days: ['Wed'] })],
-    availability: { Ana: avail(1, ['Mon', 'Tue', 'Wed'], 8, 16) },
+    availability: { Ana: avail(1, ['Mon', 'Tue', 'Wed'], 8) },
   });
   assert.strictEqual(byTask(rows, 'X1')[0].name, 'Ana');
   assert.strictEqual(byTask(rows, 'X2')[0].name, 'Ana');
@@ -332,32 +324,34 @@ test('hours cap: half hours count, and it adds up across the whole week', () => 
   assert.strictEqual(usage.Ana.minutes, 75);
 });
 
-test('day cap: only the largest continuous block counts, not all the hours that day', () => {
-  // Blocks 9-10, 11-13 and 15-16, listed out of order: four hours free, but two is the most in a row.
-  const availability = { Ana: { none: false, hoursWanted: 20, slots: { Mon: [15, 12, 9, 11] } } };
-  assert.strictEqual(placeOne({ minutes: 120 }, availability).name, 'Ana');
-  assert.strictEqual(placeOne({ minutes: 121 }, availability).name, '');
+test('day cap: the hours offered that day, with what is already placed taken off', () => {
+  const availability = { Ana: { none: false, hoursWanted: 20, dayHours: { Mon: 2.5 } } };
+  assert.strictEqual(placeOne({ minutes: 150 }, availability).name, 'Ana');
+  assert.strictEqual(placeOne({ minutes: 151 }, availability).name, '');
 
   const { rows } = run({
-    tasks: [task({ id: 'X1', minutes: 100 }), task({ id: 'X2', minutes: 30 }), task({ id: 'X3', minutes: 20 })],
+    tasks: [task({ id: 'X1', minutes: 130 }), task({ id: 'X2', minutes: 30 }), task({ id: 'X3', minutes: 20 })],
     availability,
   });
   assert.strictEqual(byTask(rows, 'X1')[0].name, 'Ana');
-  assert.strictEqual(byTask(rows, 'X2')[0].name, '', '30 is more than the 20 left in the block');
-  assert.strictEqual(byTask(rows, 'X3')[0].name, 'Ana', 'the 20 left in the block still gets used');
+  assert.strictEqual(byTask(rows, 'X2')[0].name, '', '30 is more than the 20 left in the day');
+  assert.strictEqual(byTask(rows, 'X3')[0].name, 'Ana', 'the 20 left in the day still gets used');
 });
 
-test('day cap: hours read from a sheet as text still make one block', () => {
-  const availability = { Ana: { none: false, hoursWanted: '20', slots: { Mon: ['10', '9', '11'] } } };
+test('day cap: hours read as text still count, and a zero or a missing day means no work', () => {
+  const availability = { Ana: { none: false, hoursWanted: '20', dayHours: { Mon: '3', Tue: 0 } } };
   assert.strictEqual(placeOne({ minutes: 180 }, availability).name, 'Ana');
   assert.strictEqual(placeOne({ minutes: 181 }, availability).name, '');
+  assert.strictEqual(placeOne({ days: ['Tue'] }, availability).name, '', 'zero hours that day');
+  assert.strictEqual(placeOne({ days: ['Wed'] }, availability).name, '', 'that day was not offered');
+  assert.strictEqual(placeOne({}, { Ana: { none: false, hoursWanted: 20 } }).name, '', 'no hours at all');
 });
 
 test('none:true and no submission mean no work', () => {
-  const lot = { none: true, hoursWanted: 20, slots: { Mon: [9, 10, 11] } };
+  const lot = { none: true, hoursWanted: 20, dayHours: { Mon: 3 } };
   assert.strictEqual(placeOne({}, { Ana: lot }).name, '');
   assert.strictEqual(placeOne({}, {}).name, '');
-  const { rows, usage } = run({ tasks: [task({ id: 'X1' })], availability: { Ana: lot, Cora: avail(5, ['Mon'], 9, 12) } });
+  const { rows, usage } = run({ tasks: [task({ id: 'X1' })], availability: { Ana: lot, Cora: avail(5, ['Mon'], 3) } });
   assert.strictEqual(rows[0].name, 'Cora', 'Ana said no and Ben never submitted');
   assert.strictEqual(usage.Ana.minutes, 0);
   assert.strictEqual(usage.Ana.wantedMinutes, 0);
@@ -365,12 +359,12 @@ test('none:true and no submission mean no work', () => {
 });
 
 test('a free day with no hours requested means no work, tolerance or not', () => {
-  assert.strictEqual(placeOne({ minutes: 15 }, { Ana: avail(0, ['Mon'], 9, 12) }).name, '');
-  assert.strictEqual(placeOne({ minutes: 15 }, { Ana: { none: false, slots: { Mon: [9] } } }).name, '');
+  assert.strictEqual(placeOne({ minutes: 15 }, { Ana: avail(0, ['Mon'], 3) }).name, '');
+  assert.strictEqual(placeOne({ minutes: 15 }, { Ana: { none: false, dayHours: { Mon: 1 } } }).name, '');
 });
 
 test('out of town beats availability for flexible people too', () => {
-  const availability = { Ana: avail(6, ['Mon'], 9, 12), Ben: avail(6, ['Mon'], 9, 12) };
+  const availability = { Ana: avail(6, ['Mon'], 3), Ben: avail(6, ['Mon'], 3) };
   const timeOff = [{ name: 'Ana', from: '2026-11-08', to: MON }];
   assert.strictEqual(placeOne({}, availability, { timeOff }).name, 'Ben');
   assert.strictEqual(placeOne({}, availability, { timeOff: [{ name: 'Ana', from: TUE, to: FRI }] }).name, 'Ana');
@@ -413,7 +407,7 @@ test('set staff: inactive people, inactive tasks and unknown task IDs make no ro
 
 test('set person out of town one day: only that day goes to cover, to the best-ranked person available', () => {
   const { rows, unfilled } = run({
-    availability: { Ben: avail(6, ['Thu'], 9, 12), Ana: avail(6, ['Thu'], 9, 12) },
+    availability: { Ben: avail(6, ['Thu'], 3), Ana: avail(6, ['Thu'], 3) },
     timeOff: [{ name: 'Gus', from: THU, to: THU }],
   });
   const thu = byKey(rows, `set|T08|${THU}|Gus`);
@@ -430,7 +424,7 @@ test('set person out of town one day: only that day goes to cover, to the best-r
 
 test('set person out of town one day: the next rank covers when the best is not free', () => {
   const { rows } = run({
-    availability: { Ana: avail(6, ['Mon'], 9, 12), Ben: avail(6, ['Thu'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon'], 3), Ben: avail(6, ['Thu'], 3) },
     timeOff: [{ name: 'Gus', from: THU, to: THU }],
   });
   assert.strictEqual(byKey(rows, `set|T08|${THU}|Gus`).name, 'Ben');
@@ -449,14 +443,14 @@ test('set person out of town one day: nobody free means uncovered, and only that
 
 test('set person out of town: cover uses the task flex window, and a whole range goes to cover', () => {
   // T08 has flex 1: Thu, then Fri, then Wed. Gus still does it himself on Fri, so that day doesn't count.
-  let result = run({ availability: { Ana: avail(6, ['Wed'], 9, 12) }, timeOff: [{ name: 'Gus', from: THU, to: THU }] });
+  let result = run({ availability: { Ana: avail(6, ['Wed'], 3) }, timeOff: [{ name: 'Gus', from: THU, to: THU }] });
   let cover = byKey(result.rows, `set|T08|${THU}|Gus`);
   assert.strictEqual(cover.name, 'Ana');
   assert.strictEqual(cover.date, WED);
   assert.strictEqual(cover.day, 'Wed');
 
   // T15 on a Sunday, flex 1: next Monday is outside the week, so it can only fall back to Saturday.
-  result = run({ availability: { Ana: avail(6, ['Sat'], 8, 14) }, timeOff: [{ name: 'Jo', from: SUN, to: SUN }] });
+  result = run({ availability: { Ana: avail(6, ['Sat'], 6) }, timeOff: [{ name: 'Jo', from: SUN, to: SUN }] });
   cover = byKey(result.rows, `set|T15|${SUN}|Jo`);
   assert.strictEqual(cover.name, 'Ana');
   assert.strictEqual(cover.date, SAT);
@@ -466,7 +460,7 @@ test('set person out of town: cover uses the task flex window, and a whole range
 });
 
 test('set person out of town: a covering person can pick up Sunday when they offered it', () => {
-  const { rows } = run({ availability: { Ana: avail(8, ['Sun'], 8, 14) }, timeOff: [{ name: 'Gus', from: SUN, to: SUN }] });
+  const { rows } = run({ availability: { Ana: avail(8, ['Sun'], 6) }, timeOff: [{ name: 'Gus', from: SUN, to: SUN }] });
   const cover = byKey(rows, `set|T08|${SUN}|Gus`);
   assert.strictEqual(cover.name, 'Ana');
   assert.strictEqual(cover.date, SUN);
@@ -487,7 +481,7 @@ test('cancelled time off is ignored', () => {
 
 test('closed day (Thanksgiving week): flex 0 dropped, movable shifted, set rows absent', () => {
   const week = { weekOf: '2026-11-23', today: '2026-11-20', closedDays: ['2026-11-26'] };
-  const { rows } = run({ ...week, availability: { Cora: avail(20, MON_SAT, 8, 16) } });
+  const { rows } = run({ ...week, availability: { Cora: avail(20, MON_SAT, 8) } });
 
   assert.deepStrictEqual(rows.filter((r) => r.date === '2026-11-26'), [], 'no rows that day at all');
   assert.deepStrictEqual(rows.filter((r) => r.name === 'Gus').map((r) => r.date), ['2026-11-27', '2026-11-29']);
@@ -503,7 +497,7 @@ test('closed day (Thanksgiving week): flex 0 dropped, movable shifted, set rows 
 test('closed day: a movable row falls back to -1 when +1 is not possible, or waits uncovered off the closed day', () => {
   const week = { weekOf: '2026-11-23', today: '2026-11-20', closedDays: ['2026-11-26'] };
   const tasks = [task({ id: 'X1', days: ['Thu'], flexDays: 1 })];
-  let rows = run({ ...week, tasks, availability: { Ana: avail(5, ['Wed'], 9, 12) } }).rows;
+  let rows = run({ ...week, tasks, availability: { Ana: avail(5, ['Wed'], 3) } }).rows;
   assert.strictEqual(rows[0].date, '2026-11-25');
   assert.strictEqual(rows[0].name, 'Ana');
 
@@ -513,21 +507,21 @@ test('closed day: a movable row falls back to -1 when +1 is not possible, or wai
 });
 
 test('closed day: a flex 0 task is dropped even when someone offered that day, and so is one with every option closed', () => {
-  const availability = { Ana: avail(5, MON_SAT, 9, 12) };
+  const availability = { Ana: avail(5, MON_SAT, 3) };
   assert.deepStrictEqual(run({ tasks: [task({ days: ['Mon'] })], closedDays: [MON], availability }).rows, []);
   const allClosed = run({ tasks: [task({ days: ['Wed'], flexDays: 1 })], closedDays: [TUE, WED, THU], availability });
   assert.deepStrictEqual(allClosed.rows, []);
 });
 
 test('closed day: a flexible person who offered that day gets nothing on it', () => {
-  const { rows } = run({ closedDays: [MON], availability: { Ana: avail(20, ['Mon', 'Tue'], 8, 16) } });
+  const { rows } = run({ closedDays: [MON], availability: { Ana: avail(20, ['Mon', 'Tue'], 8) } });
   assert.ok(!rows.some((r) => r.date === MON));
 });
 
 /* ---------------------------------------------------------------- flex window ---- */
 
 test('flex window: preferred date, then +1, then -1, then +2, then -2', () => {
-  const place = (days) => placeOne({ days: ['Wed'], flexDays: 2 }, { Ana: avail(5, days, 9, 12) });
+  const place = (days) => placeOne({ days: ['Wed'], flexDays: 2 }, { Ana: avail(5, days, 3) });
   assert.strictEqual(place(['Mon', 'Tue', 'Wed', 'Thu', 'Fri']).date, WED);
   assert.strictEqual(place(['Mon', 'Tue', 'Thu', 'Fri']).date, THU, '+1 before -1');
   assert.strictEqual(place(['Mon', 'Tue', 'Fri']).date, TUE, '-1 before +2');
@@ -539,20 +533,20 @@ test('flex window: preferred date, then +1, then -1, then +2, then -2', () => {
 });
 
 test('flex window: an earlier date in the window beats a better rank on a later date', () => {
-  const placed = placeOne({ days: ['Wed'], flexDays: 1 }, { Ana: avail(5, ['Thu'], 9, 12), Ben: avail(5, ['Wed'], 9, 12) });
+  const placed = placeOne({ days: ['Wed'], flexDays: 1 }, { Ana: avail(5, ['Thu'], 3), Ben: avail(5, ['Wed'], 3) });
   assert.strictEqual(placed.name, 'Ben');
   assert.strictEqual(placed.date, WED);
 });
 
 test('flex window: rows stay inside the week', () => {
-  const lateRow = placeOne({ days: ['Sat'], flexDays: 3 }, { Ana: avail(5, ['Thu'], 9, 12) });
+  const lateRow = placeOne({ days: ['Sat'], flexDays: 3 }, { Ana: avail(5, ['Thu'], 3) });
   assert.strictEqual(lateRow.date, THU, 'Sun and next Mon are out, so Thu is the first option left');
-  const early = placeOne({ days: ['Mon'], flexDays: 1 }, { Ana: avail(5, ['Sun'], 9, 12) });
+  const early = placeOne({ days: ['Mon'], flexDays: 1 }, { Ana: avail(5, ['Sun'], 3) });
   assert.strictEqual(early.name, '', 'the Sunday before is not this week');
 });
 
 test('flex window: never Sunday unless the task lists it', () => {
-  const sundayOnly = { Ana: avail(5, ['Sun'], 9, 12) };
+  const sundayOnly = { Ana: avail(5, ['Sun'], 3) };
   const notListed = placeOne({ days: ['Sat'], flexDays: 1 }, sundayOnly);
   assert.strictEqual(notListed.name, '');
   assert.strictEqual(notListed.date, SAT);
@@ -563,7 +557,7 @@ test('flex window: never Sunday unless the task lists it', () => {
 });
 
 test('flex window: a task can be listed on Sunday and done there with flex 0', () => {
-  const placed = placeOne({ days: ['Sun'] }, { Ana: avail(5, ['Sun'], 9, 12) });
+  const placed = placeOne({ days: ['Sun'] }, { Ana: avail(5, ['Sun'], 3) });
   assert.strictEqual(placed.date, SUN);
   assert.strictEqual(placed.day, 'Sun');
 });
@@ -571,21 +565,21 @@ test('flex window: a task can be listed on Sunday and done there with flex 0', (
 /* -------------------------------------------------------------------- one-offs ---- */
 
 test('pinned one-off: stays on its date, by rank, and never slides to another day', () => {
-  const availability = { Ana: avail(5, ['Wed'], 9, 12), Ben: avail(5, ['Wed', 'Thu'], 9, 12) };
+  const availability = { Ana: avail(5, ['Wed'], 3), Ben: avail(5, ['Wed', 'Thu'], 3) };
   let got = run({ tasks: [], oneOffs: [oneOff({ day: 'Wed' })], availability }).rows[0];
   assert.deepStrictEqual([got.name, got.date, got.day, got.source], ['Ana', WED, 'Wed', 'auto']);
 
   got = run({ tasks: [], oneOffs: [oneOff({ day: WED })], availability }).rows[0];
   assert.deepStrictEqual([got.name, got.date], ['Ana', WED], 'a full date works as well as a day name');
 
-  got = run({ tasks: [], oneOffs: [oneOff({ day: 'Wed' })], availability: { Ana: avail(5, ['Thu'], 9, 12) } });
+  got = run({ tasks: [], oneOffs: [oneOff({ day: 'Wed' })], availability: { Ana: avail(5, ['Thu'], 3) } });
   assert.strictEqual(got.rows[0].name, '');
   assert.strictEqual(got.rows[0].date, WED);
   assert.deepStrictEqual(got.unfilled, got.rows);
 });
 
 test('pinned one-off: a day name or a full date both pin it, and a date outside the week does not', () => {
-  const availability = { Ana: avail(5, ['Mon', 'Wed'], 9, 12) };
+  const availability = { Ana: avail(5, ['Mon', 'Wed'], 3) };
   const dateFor = (day) => run({ tasks: [], oneOffs: [oneOff({ day })], availability }).rows[0].date;
   assert.strictEqual(dateFor(''), MON, 'with no day it goes to the earliest date with room');
   assert.strictEqual(dateFor('Wed'), WED);
@@ -600,17 +594,17 @@ test('pinned one-off: goes before a movable task of the same priority, and can u
   const { rows } = run({
     tasks: [task({ id: 'R1', days: ['Wed'], flexDays: 1, minutes: 60 })],
     oneOffs: [oneOff({ id: 'P1', day: 'Wed', minutes: 60 })],
-    availability: { Ana: avail(2, ['Wed'], 9, 10) },
+    availability: { Ana: avail(2, ['Wed'], 1) },
   });
   assert.strictEqual(byKey(rows, 'oneoff|P1').name, 'Ana');
   assert.strictEqual(byKey(rows, 'task|R1|' + WED).name, '');
 
-  const sunday = run({ tasks: [], oneOffs: [oneOff({ day: 'Sun' })], availability: { Ana: avail(2, ['Sun'], 9, 12) } }).rows[0];
+  const sunday = run({ tasks: [], oneOffs: [oneOff({ day: 'Sun' })], availability: { Ana: avail(2, ['Sun'], 3) } }).rows[0];
   assert.deepStrictEqual([sunday.name, sunday.date], ['Ana', SUN]);
 });
 
 test('pinned one-off: too big for anyone stays whole and uncovered, it never goes partial', () => {
-  const { rows, unfilled } = run({ tasks: [], oneOffs: [oneOff({ day: 'Mon', minutes: 300 })], availability: { Ana: avail(6, ['Mon'], 9, 12) } });
+  const { rows, unfilled } = run({ tasks: [], oneOffs: [oneOff({ day: 'Mon', minutes: 300 })], availability: { Ana: avail(6, ['Mon'], 3) } });
   assert.strictEqual(rows[0].name, '');
   assert.strictEqual(rows[0].minutes, 300);
   assert.strictEqual(rows[0].partial, false);
@@ -622,7 +616,7 @@ test('pinned one-off on a closed day: waits uncovered on the next open day for a
     tasks: [],
     closedDays: [THU],
     oneOffs: [oneOff({ day: 'Thu', who: ['Max'] }), oneOff({ id: 'O2', day: 'Thu' })],
-    availability: { Ana: avail(5, MON_SAT, 9, 12) },
+    availability: { Ana: avail(5, MON_SAT, 3) },
   });
   assert.deepStrictEqual(rows.map((r) => [r.name, r.date]), [['', FRI], ['', FRI]]);
   assert.strictEqual(unfilled.length, 2);
@@ -633,7 +627,7 @@ test('pinned one-off whose day has passed stands for today, so it stays open and
     tasks: [],
     today: WED,
     oneOffs: [oneOff({ day: 'Mon' })],
-    availability: { Ana: avail(5, ['Mon', 'Wed'], 9, 12) },
+    availability: { Ana: avail(5, ['Mon', 'Wed'], 3) },
   });
   assert.deepStrictEqual([rows[0].name, rows[0].date], ['Ana', WED]);
 });
@@ -647,7 +641,7 @@ test('uncovered one-off with nowhere open to wait: it still lands on a date insi
   assert.strictEqual(place({ closedDays: everyDay, today: WED }).date, WED, 'all closed, mid-week: today');
   const onlyEarlier = place({ closedDays: [SAT] }, { day: 'Sat' });
   assert.strictEqual(onlyEarlier.date, MON, 'Saturday closed and nothing open after it: the first open day');
-  const onlySunday = place({ today: SAT, closedDays: [SAT], availability: { Ana: avail(5, ['Sun'], 9, 12) } });
+  const onlySunday = place({ today: SAT, closedDays: [SAT], availability: { Ana: avail(5, ['Sun'], 3) } });
   assert.deepStrictEqual([onlySunday.name, onlySunday.date], ['', SUN], 'only Sunday is left: it waits there, and she is not put on it');
 });
 
@@ -655,13 +649,13 @@ test('one-offs: only open ones get rows', () => {
   const { rows } = run({
     tasks: [],
     oneOffs: [oneOff({ id: 'A', status: 'open' }), oneOff({ id: 'B', status: 'done' }), oneOff({ id: 'C', status: 'deleted' })],
-    availability: { Ana: avail(5, ['Mon'], 9, 12) },
+    availability: { Ana: avail(5, ['Mon'], 3) },
   });
   assert.deepStrictEqual(rows.map((r) => r.oneOffId), ['A']);
 });
 
 test('who filter: only those people, even when someone better ranked is free', () => {
-  const availability = { Ana: avail(5, ['Mon'], 9, 12), Cora: avail(5, ['Mon'], 9, 12) };
+  const availability = { Ana: avail(5, ['Mon'], 3), Cora: avail(5, ['Mon'], 3) };
   let got = run({ tasks: [], oneOffs: [oneOff({ who: ['Cora'] })], availability }).rows[0];
   assert.strictEqual(got.name, 'Cora');
   got = run({ tasks: [], oneOffs: [oneOff({ who: ['Cora'], day: 'Mon' })], availability }).rows[0];
@@ -673,7 +667,7 @@ test('who filter: only those people, even when someone better ranked is free', (
 });
 
 test('who filter: names as comma-separated text work the same, and blank means anyone', () => {
-  const availability = { Ana: avail(5, ['Mon'], 9, 12), Ben: avail(5, ['Mon'], 9, 12), Cora: avail(5, ['Mon'], 9, 12) };
+  const availability = { Ana: avail(5, ['Mon'], 3), Ben: avail(5, ['Mon'], 3), Cora: avail(5, ['Mon'], 3) };
   const nameFor = (who) => run({ tasks: [], oneOffs: [oneOff({ who })], availability }).rows[0].name;
   assert.strictEqual(nameFor('Cora, Ben'), 'Ben');
   assert.strictEqual(nameFor(''), 'Ana');
@@ -682,10 +676,10 @@ test('who filter: names as comma-separated text work the same, and blank means a
 });
 
 test('several names in who: by rank, not by the order they are listed', () => {
-  const availability = { Ana: avail(5, ['Mon'], 9, 12), Ben: avail(5, ['Mon'], 9, 12), Cora: avail(5, ['Mon'], 9, 12) };
+  const availability = { Ana: avail(5, ['Mon'], 3), Ben: avail(5, ['Mon'], 3), Cora: avail(5, ['Mon'], 3) };
   const who = ['Cora', 'Ben'];
   assert.strictEqual(run({ tasks: [], oneOffs: [oneOff({ who })], availability }).rows[0].name, 'Ben');
-  const benGone = { ...availability, Ben: avail(5, ['Tue'], 9, 10) };
+  const benGone = { ...availability, Ben: avail(5, ['Tue'], 1) };
   const got = run({ tasks: [], oneOffs: [oneOff({ who, day: 'Mon' })], availability: benGone }).rows[0];
   assert.strictEqual(got.name, 'Cora', 'pinned Monday and Ben only has Tuesday');
 });
@@ -694,25 +688,25 @@ test('no-day one-off: people first, on a date where they already have work', () 
   const { rows } = run({
     tasks: [task({ id: 'R1', priority: 'A', days: ['Wed'], minutes: 60 })],
     oneOffs: [oneOff({ priority: 'B' })],
-    availability: { Ana: avail(6, ['Mon', 'Wed'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon', 'Wed'], 3) },
   });
   const got = byKey(rows, 'oneoff|O1');
   assert.deepStrictEqual([got.name, got.date, got.day], ['Ana', WED, 'Wed'], 'Wed because she is there anyway, not the earlier Mon');
 });
 
 test('no-day one-off: the best-ranked person gets it, even on a later day than someone else could do it', () => {
-  const got = run({ tasks: [], oneOffs: [oneOff()], availability: { Ben: avail(6, ['Mon'], 9, 12), Ana: avail(6, ['Fri'], 9, 12) } }).rows[0];
+  const got = run({ tasks: [], oneOffs: [oneOff()], availability: { Ben: avail(6, ['Mon'], 3), Ana: avail(6, ['Fri'], 3) } }).rows[0];
   assert.deepStrictEqual([got.name, got.date], ['Ana', FRI]);
 });
 
 test('no-day one-off: with no work yet, the earliest date with room', () => {
-  const availability = { Ana: { none: false, hoursWanted: 6, slots: { Tue: [9], Wed: [9, 10, 11], Thu: [9, 10, 11] } } };
+  const availability = { Ana: { none: false, hoursWanted: 6, dayHours: { Tue: 1, Wed: 3, Thu: 3 } } };
   const got = run({ tasks: [], oneOffs: [oneOff({ minutes: 90 })], availability }).rows[0];
   assert.strictEqual(got.date, WED, 'Tuesday only has an hour, so Wednesday is the earliest with room');
 });
 
 test('no-day one-off: skips a worked day with no room, then the next person when they have none at all', () => {
-  const availability = { Ana: avail(6, ['Mon', 'Wed'], 9, 10), Ben: avail(6, ['Tue'], 9, 12) };
+  const availability = { Ana: avail(6, ['Mon', 'Wed'], 1), Ben: avail(6, ['Tue'], 3) };
   const tasks = [task({ id: 'R1', priority: 'A', days: ['Mon'], minutes: 45 })];
   let got = byKey(run({ tasks, oneOffs: [oneOff({ minutes: 30 })], availability }).rows, 'oneoff|O1');
   assert.deepStrictEqual([got.name, got.date], ['Ana', WED], 'only 15 left on Monday, so her empty Wednesday');
@@ -722,52 +716,52 @@ test('no-day one-off: skips a worked day with no room, then the next person when
 });
 
 test('no-day one-off: never on Sunday, a closed day or before today, and it counts against capacity', () => {
-  const noWork = run({ tasks: [], oneOffs: [oneOff()], availability: { Ana: avail(6, ['Sun'], 9, 12) } }).rows[0];
+  const noWork = run({ tasks: [], oneOffs: [oneOff()], availability: { Ana: avail(6, ['Sun'], 3) } }).rows[0];
   assert.strictEqual(noWork.name, '');
   assert.notStrictEqual(noWork.date, SUN);
   assert.strictEqual(noWork.date, MON, 'uncovered, it waits on the first allowed date');
 
-  const closed = run({ tasks: [], closedDays: [MON], oneOffs: [oneOff()], availability: { Ana: avail(6, ['Mon', 'Tue'], 9, 12) } }).rows[0];
+  const closed = run({ tasks: [], closedDays: [MON], oneOffs: [oneOff()], availability: { Ana: avail(6, ['Mon', 'Tue'], 3) } }).rows[0];
   assert.strictEqual(closed.date, TUE);
 
-  const late = run({ tasks: [], today: WED, oneOffs: [oneOff()], availability: { Ana: avail(6, ['Mon', 'Thu'], 9, 12) } }).rows[0];
+  const late = run({ tasks: [], today: WED, oneOffs: [oneOff()], availability: { Ana: avail(6, ['Mon', 'Thu'], 3) } }).rows[0];
   assert.strictEqual(late.date, THU);
 
   const { rows } = run({
     tasks: [task({ id: 'R1', priority: 'C', minutes: 60 })],
     oneOffs: [oneOff({ priority: 'B', minutes: 60 })],
-    availability: { Ana: avail(1, ['Mon'], 9, 10) },
+    availability: { Ana: avail(1, ['Mon'], 1) },
   });
   assert.strictEqual(byKey(rows, 'oneoff|O1').name, 'Ana');
   assert.strictEqual(byKey(rows, 'task|R1|' + MON).name, '', 'the one-off took the hour');
 });
 
-test('oversized one-off becomes partial: best-ranked person, using what is left of the block', () => {
-  const { rows, unfilled } = run({ tasks: [], oneOffs: [oneOff({ minutes: 300 })], availability: { Ana: avail(6, ['Mon'], 9, 12), Ben: avail(6, ['Mon'], 9, 12) } });
+test('oversized one-off becomes partial: best-ranked person, using what is left of the day', () => {
+  const { rows, unfilled } = run({ tasks: [], oneOffs: [oneOff({ minutes: 300 })], availability: { Ana: avail(6, ['Mon'], 3), Ben: avail(6, ['Mon'], 3) } });
   assert.deepStrictEqual([rows[0].name, rows[0].date, rows[0].minutes, rows[0].partial], ['Ana', MON, 180, true]);
   assert.deepStrictEqual(unfilled, []);
 });
 
-test('oversized one-off: uses what is left of the week when that is smaller than the block', () => {
-  const got = run({ tasks: [], oneOffs: [oneOff({ minutes: 300 })], availability: { Ana: avail(1, ['Mon'], 8, 14) } }).rows[0];
+test('oversized one-off: uses what is left of the week when that is smaller than the day', () => {
+  const got = run({ tasks: [], oneOffs: [oneOff({ minutes: 300 })], availability: { Ana: avail(1, ['Mon'], 6) } }).rows[0];
   assert.deepStrictEqual([got.name, got.minutes, got.partial], ['Ana', 75, true]);
 });
 
 test('oversized one-off: someone lower ranked who fits it whole beats a partial for someone better', () => {
-  const got = run({ tasks: [], oneOffs: [oneOff({ minutes: 300 })], availability: { Ana: avail(6, ['Mon'], 9, 12), Ben: avail(6, ['Tue'], 8, 14) } }).rows[0];
+  const got = run({ tasks: [], oneOffs: [oneOff({ minutes: 300 })], availability: { Ana: avail(6, ['Mon'], 3), Ben: avail(6, ['Tue'], 6) } }).rows[0];
   assert.deepStrictEqual([got.name, got.date, got.minutes, got.partial], ['Ben', TUE, 300, false]);
 });
 
 test('oversized one-off: needs 30 minutes left, and goes to the next rank when the best has less', () => {
   const tasks = [task({ id: 'R1', priority: 'A', days: ['Mon'], minutes: 40 }), task({ id: 'R2', priority: 'A', days: ['Tue'], minutes: 15 })];
-  const availability = { Ana: avail(6, ['Mon'], 9, 10), Ben: avail(6, ['Tue'], 9, 10) };
+  const availability = { Ana: avail(6, ['Mon'], 1), Ben: avail(6, ['Tue'], 1) };
   const { rows } = run({ tasks, oneOffs: [oneOff({ minutes: 300 })], availability });
   const got = byKey(rows, 'oneoff|O1');
   assert.deepStrictEqual([got.name, got.date, got.minutes, got.partial], ['Ben', TUE, 45, true], 'Ana has only 20 left, Ben has 45');
 });
 
 test('oversized one-off: exactly 30 left is enough, 29 is not, and nobody means uncovered at full size', () => {
-  const availability = { Ana: avail(6, ['Mon'], 9, 10) };
+  const availability = { Ana: avail(6, ['Mon'], 1) };
   const withRoom = (minutes) => run({ tasks: [task({ id: 'R1', priority: 'A', minutes })], oneOffs: [oneOff({ minutes: 300 })], availability });
   const thirty = byKey(withRoom(30).rows, 'oneoff|O1');
   assert.deepStrictEqual([thirty.name, thirty.minutes, thirty.partial], ['Ana', 30, true]);
@@ -779,14 +773,14 @@ test('oversized one-off: starts on a day they already work before an empty earli
   const { rows } = run({
     tasks: [task({ id: 'R1', priority: 'A', minutes: 60, days: ['Wed'] })],
     oneOffs: [oneOff({ minutes: 300 })],
-    availability: { Ana: avail(20, ['Mon', 'Wed'], 9, 12) },
+    availability: { Ana: avail(20, ['Mon', 'Wed'], 3) },
   });
   const got = byKey(rows, 'oneoff|O1');
   assert.deepStrictEqual([got.name, got.date, got.minutes, got.partial], ['Ana', WED, 120, true]);
 });
 
 test('oversized one-off: the who filter still applies', () => {
-  const availability = { Ana: avail(6, ['Mon'], 9, 12), Ben: avail(6, ['Mon'], 9, 11) };
+  const availability = { Ana: avail(6, ['Mon'], 3), Ben: avail(6, ['Mon'], 2) };
   const got = run({ tasks: [], oneOffs: [oneOff({ minutes: 300, who: ['Ben'] })], availability }).rows[0];
   assert.deepStrictEqual([got.name, got.minutes, got.partial], ['Ben', 120, true]);
 });
@@ -809,12 +803,11 @@ test('who with a Set person: after their last set day, the first allowed date', 
   assert.deepStrictEqual([away.name, away.date], ['', TUE], 'pinned to a day they are away stays uncovered');
 });
 
-test('who with a Manager: no capacity tracking, the first allowed date, no shift', () => {
+test('who with a Manager: no capacity tracking, the first allowed date', () => {
   const place = (extra, overrides) => run({ tasks: [], oneOffs: [oneOff({ who: ['Max'], minutes: 600, ...overrides })], ...extra });
   const result = place({});
   const got = result.rows[0];
   assert.deepStrictEqual([got.name, got.date, got.minutes, got.partial], ['Max', MON, 600, false]);
-  assert.deepStrictEqual(result.shifts, []);
   assert.strictEqual(result.usage.Max.minutes, 600);
   assert.strictEqual(result.usage.Max.wantedMinutes, null);
   assert.strictEqual(place({ today: WED }).rows[0].date, WED);
@@ -825,11 +818,11 @@ test('who with a Manager: no capacity tracking, the first allowed date, no shift
 
 test('who mixing people: a flexible person who fits comes before a manager, who has no rank', () => {
   const who = ['Max', 'Ana'];
-  let got = run({ tasks: [], oneOffs: [oneOff({ who })], availability: { Ana: avail(5, ['Tue'], 9, 12) } }).rows[0];
+  let got = run({ tasks: [], oneOffs: [oneOff({ who })], availability: { Ana: avail(5, ['Tue'], 3) } }).rows[0];
   assert.deepStrictEqual([got.name, got.date], ['Ana', TUE]);
   got = run({ tasks: [], oneOffs: [oneOff({ who })], availability: {} }).rows[0];
   assert.deepStrictEqual([got.name, got.date], ['Max', MON]);
-  got = run({ tasks: [], oneOffs: [oneOff({ who: ['Gus', 'Ana'] })], availability: { Ana: avail(5, ['Tue'], 9, 12) } }).rows[0];
+  got = run({ tasks: [], oneOffs: [oneOff({ who: ['Gus', 'Ana'] })], availability: { Ana: avail(5, ['Tue'], 3) } }).rows[0];
   assert.deepStrictEqual([got.name, got.date], ['Gus', THU], 'set people have the better ranks');
   const inactive = buildInput().staff.map((p) => (p.name === 'Gus' ? { ...p, active: false } : p));
   got = run({ tasks: [], staff: inactive, oneOffs: [oneOff({ who: ['Gus'] })] }).rows[0];
@@ -838,7 +831,7 @@ test('who mixing people: a flexible person who fits comes before a manager, who 
 
 test('who mixing people: having no rank puts a manager last, whatever their name is', () => {
   const staff = [...buildInput().staff, { name: 'Abe', rank: null, type: 'Manager', active: true, setDays: [], setTasks: [] }];
-  const got = run({ tasks: [], staff, oneOffs: [oneOff({ who: ['Abe', 'Ana'] })], availability: { Ana: avail(5, ['Tue'], 9, 12) } }).rows[0];
+  const got = run({ tasks: [], staff, oneOffs: [oneOff({ who: ['Abe', 'Ana'] })], availability: { Ana: avail(5, ['Tue'], 3) } }).rows[0];
   assert.strictEqual(got.name, 'Ana');
 });
 
@@ -846,7 +839,7 @@ test('Set and Manager one-offs do not eat into anyone else', () => {
   const { rows, usage } = run({
     tasks: [task({ id: 'R1', minutes: 60 })],
     oneOffs: [oneOff({ who: ['Max'], day: 'Mon', minutes: 600 })],
-    availability: { Ana: avail(1, ['Mon'], 9, 10) },
+    availability: { Ana: avail(1, ['Mon'], 1) },
   });
   assert.strictEqual(byKey(rows, 'task|R1|' + MON).name, 'Ana');
   assert.strictEqual(usage.Ana.minutes, 60);
@@ -857,7 +850,7 @@ test('Set and Manager one-offs do not eat into anyone else', () => {
 test('tidy: a short trip moves to another day in the window where the same person already works', () => {
   const { rows, usage } = run({
     tasks: [task({ id: 'R1', minutes: 15, days: ['Mon'], flexDays: 1 }), task({ id: 'R2', priority: 'A', minutes: 60, days: ['Tue'] })],
-    availability: { Ana: avail(6, ['Mon', 'Tue'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon', 'Tue'], 3) },
   });
   const moved = byKey(rows, 'task|R1|' + MON);
   assert.deepStrictEqual([moved.name, moved.date, moved.day], ['Ana', TUE, 'Tue']);
@@ -867,7 +860,7 @@ test('tidy: a short trip moves to another day in the window where the same perso
 test('tidy: a day outside the row window does not count, so it stays or goes to someone else', () => {
   const { rows } = run({
     tasks: [task({ id: 'R1', minutes: 15, days: ['Mon'], flexDays: 1 }), task({ id: 'R2', priority: 'A', minutes: 60, days: ['Wed'] })],
-    availability: { Ana: avail(6, ['Mon', 'Wed'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon', 'Wed'], 3) },
   });
   assert.deepStrictEqual([byKey(rows, 'task|R1|' + MON).name, byKey(rows, 'task|R1|' + MON).date], ['Ana', MON]);
 });
@@ -880,7 +873,7 @@ test('tidy: otherwise it moves to another person already working that day, by ra
       task({ id: 'R2', priority: 'B', minutes: 60, days: ['Mon'] }),
       task({ id: 'R3', priority: 'B', minutes: 60, days: ['Mon'], order: 101 }),
     ],
-    availability: { Ana: avail(6, ['Mon'], 9, 10), Ben: avail(1, ['Mon'], 9, 12), Cora: avail(6, ['Mon'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon'], 1), Ben: avail(1, ['Mon'], 3), Cora: avail(6, ['Mon'], 3) },
   });
   const moved = byKey(rows, 'task|R1|' + MON);
   assert.deepStrictEqual([moved.name, moved.date], ['Ben', MON]);
@@ -896,19 +889,19 @@ test('tidy: same person on another day comes before another person', () => {
       task({ id: 'R2', priority: 'B', minutes: 60, days: ['Mon'] }),
       task({ id: 'R3', priority: 'B', minutes: 30, days: ['Tue'] }),
     ],
-    availability: { Ana: avail(6, ['Mon', 'Tue'], 9, 10), Ben: avail(6, ['Mon'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon', 'Tue'], 1), Ben: avail(6, ['Mon'], 3) },
   });
   assert.deepStrictEqual([byKey(rows, 'task|R1|' + MON).name, byKey(rows, 'task|R1|' + MON).date], ['Ana', TUE]);
 });
 
 test('tidy: with nowhere to go, the row stays', () => {
-  const got = placeOne({ minutes: 15, days: ['Mon'], flexDays: 1 }, { Ana: avail(6, ['Mon', 'Tue'], 9, 12) });
+  const got = placeOne({ minutes: 15, days: ['Mon'], flexDays: 1 }, { Ana: avail(6, ['Mon', 'Tue'], 3) });
   assert.deepStrictEqual([got.name, got.date], ['Ana', MON], 'she has no other work to join');
 });
 
 test('tidy: never moves to a day the person does not already work', () => {
   // Saturday's window reaches back to Friday. She has the room there, but no reason to come in.
-  const got = placeOne({ minutes: 15, days: ['Sat'], flexDays: 1 }, { Ana: avail(6, ['Fri', 'Sat'], 9, 12) });
+  const got = placeOne({ minutes: 15, days: ['Sat'], flexDays: 1 }, { Ana: avail(6, ['Fri', 'Sat'], 3) });
   assert.deepStrictEqual([got.name, got.date], ['Ana', SAT]);
 });
 
@@ -917,14 +910,14 @@ test('tidy: never moves to a person who is not already working that day', () => 
   const { rows } = run({
     tasks: [],
     oneOffs: [oneOff({ id: 'O1', minutes: 15, who: ['Ana', 'Cora'] }), oneOff({ id: 'O2', minutes: 15, who: ['Ben', 'Cora'] })],
-    availability: { Ana: avail(6, ['Mon'], 9, 12), Ben: avail(6, ['Mon'], 9, 12), Cora: avail(6, ['Mon'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon'], 3), Ben: avail(6, ['Mon'], 3), Cora: avail(6, ['Mon'], 3) },
   });
   assert.strictEqual(byKey(rows, 'oneoff|O1').name, 'Ana');
   assert.strictEqual(byKey(rows, 'oneoff|O2').name, 'Ben');
 });
 
 test('tidy: a flex 0 row or pinned one-off stays with its person, even when someone else is working that day', () => {
-  const availability = { Ben: avail(6, ['Mon'], 9, 12), Cora: avail(6, ['Mon'], 9, 12) };
+  const availability = { Ben: avail(6, ['Mon'], 3), Cora: avail(6, ['Mon'], 3) };
   const coraWorks = oneOff({ id: 'C1', day: 'Mon', who: ['Cora'], minutes: 60 });
   const withTask = (flexDays) => run({ tasks: [task({ id: 'R1', minutes: 15, days: ['Mon'], flexDays })], oneOffs: [coraWorks], availability }).rows;
 
@@ -938,14 +931,14 @@ test('tidy: never hands work to a manager, even one with a stray availability en
   const { rows } = run({
     tasks: [],
     oneOffs: [oneOff({ who: ['Ana', 'Max'], minutes: 15 })],
-    availability: { Ana: avail(6, ['Mon'], 9, 12), Max: avail(6, ['Mon'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon'], 3), Max: avail(6, ['Mon'], 3) },
     locked: [row({ key: 'L1', taskId: 'L', minutes: 30, name: 'Max' })],
   });
   assert.strictEqual(rows[0].name, 'Ana');
 });
 
 test('tidy: only a whole day of movable auto rows under 30 minutes counts', () => {
-  const availability = { Ana: avail(6, ['Mon', 'Tue'], 9, 12) };
+  const availability = { Ana: avail(6, ['Mon', 'Tue'], 3) };
   const anchor = task({ id: 'ANCHOR', priority: 'A', minutes: 60, days: ['Tue'] });
 
   let rows = run({ tasks: [task({ id: 'R1', minutes: 15, days: ['Mon'], flexDays: 0 }), anchor], availability }).rows;
@@ -975,7 +968,7 @@ test('tidy: all or nothing, because moving part of a trip just leaves a shorter 
       task({ id: 'R2', minutes: 10, days: ['Mon'], flexDays: 1 }),
       task({ id: 'ANCHOR', priority: 'A', minutes: 50, days: ['Tue'] }),
     ],
-    availability: { Ana: avail(6, ['Mon', 'Tue'], 9, 10) },
+    availability: { Ana: avail(6, ['Mon', 'Tue'], 1) },
   });
   assert.strictEqual(byKey(rows, 'task|R1|' + MON).date, MON, 'Tuesday has room for only one of them');
   assert.strictEqual(byKey(rows, 'task|R2|' + MON).date, MON);
@@ -989,7 +982,7 @@ test('tidy: a move that falls through gives back the room it was holding', () =>
       task({ id: 'ANCHOR', priority: 'A', minutes: 50, days: ['Tue'] }),
       task({ id: 'R3', minutes: 10, days: ['Wed'], flexDays: 1 }),
     ],
-    availability: { Ana: avail(6, ['Mon', 'Tue', 'Wed'], 9, 10) },
+    availability: { Ana: avail(6, ['Mon', 'Tue', 'Wed'], 1) },
   });
   assert.strictEqual(byKey(rows, 'task|R1|' + MON).date, MON, 'Tuesday only has room for one of the Monday rows');
   assert.strictEqual(byKey(rows, 'task|R2|' + MON).date, MON);
@@ -999,7 +992,7 @@ test('tidy: a move that falls through gives back the room it was holding', () =>
 test('tidy: never moves cover rows', () => {
   const tasks = [task({ id: 'S1', minutes: 15, setOnly: true, days: [], flexDays: 1 }), task({ id: 'ANCHOR', minutes: 60, days: ['Fri'] })];
   const staff = [{ name: 'Gus', rank: 1, type: 'Set', active: true, setDays: ['Thu'], setTasks: [{ taskId: 'S1', days: null }] }, ...STAFF.filter((p) => p.type === 'Flexible')];
-  const { rows } = run({ tasks, staff, availability: { Ana: avail(6, ['Thu', 'Fri'], 9, 12) }, timeOff: [{ name: 'Gus', from: THU, to: THU }] });
+  const { rows } = run({ tasks, staff, availability: { Ana: avail(6, ['Thu', 'Fri'], 3) }, timeOff: [{ name: 'Gus', from: THU, to: THU }] });
   const cover = byKey(rows, `set|S1|${THU}|Gus`);
   assert.deepStrictEqual([cover.name, cover.date, cover.source], ['Ana', THU, 'cover']);
 });
@@ -1007,10 +1000,10 @@ test('tidy: never moves cover rows', () => {
 test('tidy: a no-day one-off can move, within its who list', () => {
   // The A one-off lands first, on Monday, before there is any other work to join.
   const tasks = [task({ id: 'R1', priority: 'B', minutes: 60, days: ['Wed'] })];
-  let got = run({ tasks, oneOffs: [oneOff({ priority: 'A', minutes: 15 })], availability: { Ana: avail(6, ['Mon', 'Wed'], 9, 12) } }).rows;
+  let got = run({ tasks, oneOffs: [oneOff({ priority: 'A', minutes: 15 })], availability: { Ana: avail(6, ['Mon', 'Wed'], 3) } }).rows;
   assert.deepStrictEqual([byKey(got, 'oneoff|O1').name, byKey(got, 'oneoff|O1').date], ['Ana', WED]);
 
-  const crowded = { Ana: avail(6, ['Mon'], 9, 10), Ben: avail(6, ['Mon'], 9, 12) };
+  const crowded = { Ana: avail(6, ['Mon'], 1), Ben: avail(6, ['Mon'], 3) };
   const monday = [task({ id: 'R1', priority: 'B', minutes: 60, days: ['Mon'] })];
   got = run({ tasks: monday, oneOffs: [oneOff({ priority: 'A', minutes: 15 })], availability: crowded }).rows;
   assert.strictEqual(byKey(got, 'oneoff|O1').name, 'Ben', 'anyone may do it, so it joins Ben');
@@ -1022,7 +1015,7 @@ test('tidy: leaves set staff and pinned one-offs alone', () => {
   const { rows } = run({
     tasks: [task({ id: 'R1', minutes: 60, days: ['Tue'] })],
     oneOffs: [oneOff({ id: 'P1', day: 'Mon', minutes: 15 }), oneOff({ id: 'P2', day: 'Mon', minutes: 15, who: ['Max'] })],
-    availability: { Ana: avail(6, ['Mon', 'Tue'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon', 'Tue'], 3) },
   });
   assert.deepStrictEqual([byKey(rows, 'oneoff|P1').name, byKey(rows, 'oneoff|P1').date], ['Ana', MON]);
   assert.deepStrictEqual([byKey(rows, 'oneoff|P2').name, byKey(rows, 'oneoff|P2').date], ['Max', MON]);
@@ -1034,14 +1027,13 @@ test('locked rows: use up capacity and hours, and are never repeated or changed'
   const done = row({ key: 'task|X1|' + MON, taskId: 'X1', minutes: 60, name: 'Ana', source: 'auto' });
   const input = buildInput({
     tasks: [task({ id: 'X1', minutes: 60 }), task({ id: 'X2', minutes: 30 })],
-    availability: { Ana: avail(1, ['Mon'], 9, 11), Ben: avail(5, ['Mon'], 9, 12) },
+    availability: { Ana: avail(1, ['Mon'], 2), Ben: avail(5, ['Mon'], 3) },
     locked: [done],
   });
-  const { rows, shifts, usage } = schedBuildWeek(input);
+  const { rows, usage } = schedBuildWeek(input);
   assert.deepStrictEqual(rows.map((r) => r.taskId), ['X2'], 'X1 is locked, so it is not made again');
   assert.strictEqual(rows[0].name, 'Ben', 'Ana has 15 minutes left of her week');
   assert.strictEqual(usage.Ana.minutes, 60);
-  assert.deepStrictEqual(shifts.map((s) => [s.name, s.minutes]), [['Ana', 60], ['Ben', 30]]);
 });
 
 test('locked rows: a locked set row or one-off is not made again either', () => {
@@ -1055,13 +1047,13 @@ test('locked rows: a locked set row or one-off is not made again either', () => 
 
 test('locked rows: a row without a key still counts, by task and date', () => {
   const noKey = row({ key: undefined, taskId: 'X1', minutes: 30, name: 'Ana' });
-  const { rows } = run({ tasks: [task({ id: 'X1' })], locked: [noKey], availability: { Ana: avail(5, ['Mon'], 9, 12) } });
+  const { rows } = run({ tasks: [task({ id: 'X1' })], locked: [noKey], availability: { Ana: avail(5, ['Mon'], 3) } });
   assert.deepStrictEqual(rows, []);
 });
 
 test('locked rows: a sheet ID as the key counts by task and date too, so nothing is made twice', () => {
   const tasks = [task({ id: 'X1', minutes: 15, days: ['Mon', 'Tue'] })];
-  const availability = { Ana: avail(5, ['Mon', 'Tue'], 9, 12) };
+  const availability = { Ana: avail(5, ['Mon', 'Tue'], 3) };
   const { rows } = run({ tasks, availability, locked: [row({ key: 'S-123', taskId: 'X1', minutes: 15, name: 'Ana' })] });
   assert.deepStrictEqual(rows.map((r) => r.date), [TUE], 'Monday is not made again, and Tuesday still is');
 
@@ -1072,21 +1064,21 @@ test('locked rows: a sheet ID as the key counts by task and date too, so nothing
 
 test('locked rows: a one-off is matched by its ID, whatever the row key is', () => {
   const locked = [row({ key: 'S-125', taskId: '', oneOffId: 'O1', name: 'Ana' })];
-  const { rows } = run({ tasks: [], locked, oneOffs: [oneOff({ id: 'O1' }), oneOff({ id: 'O2' })], availability: { Ana: avail(5, ['Mon'], 9, 12) } });
+  const { rows } = run({ tasks: [], locked, oneOffs: [oneOff({ id: 'O1' }), oneOff({ id: 'O2' })], availability: { Ana: avail(5, ['Mon'], 3) } });
   assert.deepStrictEqual(rows.map((r) => r.oneOffId), ['O2']);
 });
 
 test('locked rows: a row moved to another listed day, with its own key, does not use up that day', () => {
   // A manager moved Monday's row to Thursday. Its key still says Monday, so Thursday's own row is still needed.
   const moved = row({ key: 'task|X1|' + MON, taskId: 'X1', minutes: 15, date: THU, day: 'Thu', name: 'Ana', source: 'manual' });
-  const { rows } = run({ tasks: [task({ id: 'X1', minutes: 15, days: ['Mon', 'Thu'] })], locked: [moved], availability: { Ana: avail(5, ['Thu'], 9, 12) } });
+  const { rows } = run({ tasks: [task({ id: 'X1', minutes: 15, days: ['Mon', 'Thu'] })], locked: [moved], availability: { Ana: avail(5, ['Thu'], 3) } });
   assert.deepStrictEqual(rows.map((r) => [r.key, r.name, r.date]), [['task|X1|' + THU, 'Ana', THU]]);
 });
 
 test('usage: counts locked work too, even for someone no longer on the staff list', () => {
   const { usage } = run({
     tasks: [task({ id: 'X1', minutes: 30 }), task({ id: 'X2', minutes: 30, days: ['Tue'] })],
-    availability: { Ana: avail(5, ['Mon'], 9, 12) },
+    availability: { Ana: avail(5, ['Mon'], 3) },
     locked: [row({ key: 'L1', taskId: 'L', minutes: 20, name: 'Ana' }), row({ key: 'L2', taskId: 'L', date: TUE, day: 'Tue', minutes: 40, name: 'Gone' })],
   });
   assert.deepStrictEqual(usage.Ana, { minutes: 50, wantedMinutes: 300, byDate: { [MON]: 50 } });
@@ -1096,25 +1088,25 @@ test('usage: counts locked work too, even for someone no longer on the staff lis
 
 test('locked rows: a row with blank minutes counts as none and does not break anyone\'s capacity', () => {
   const locked = [row({ key: 'L1', taskId: 'L', minutes: undefined, name: 'Ana' })];
-  const { rows, usage } = run({ tasks: [task({ id: 'X1', minutes: 60 })], locked, availability: { Ana: avail(1, ['Mon'], 9, 10) } });
+  const { rows, usage } = run({ tasks: [task({ id: 'X1', minutes: 60 })], locked, availability: { Ana: avail(1, ['Mon'], 1) } });
   assert.strictEqual(rows[0].name, 'Ana');
   assert.strictEqual(usage.Ana.minutes, 60);
 });
 
 test('locked rows: rows from other weeks do not count against this one', () => {
   const lastWeek = row({ key: 'old', date: '2026-11-07', day: 'Sat', minutes: 600, name: 'Ana' });
-  const got = run({ tasks: [task()], locked: [lastWeek], availability: { Ana: avail(1, ['Mon'], 9, 10) } });
+  const got = run({ tasks: [task()], locked: [lastWeek], availability: { Ana: avail(1, ['Mon'], 1) } });
   assert.strictEqual(got.rows[0].name, 'Ana');
   assert.strictEqual(got.usage.Ana.minutes, 30);
 });
 
 /* -------------------------------------------------------------- schedFillOpen ---- */
 
-/** Ana has 120 locked and Ben 60, both free Mon 9-12 and wanting 3 hours. */
+/** Ana has 120 locked and Ben 60, both free 3 hours Monday and wanting 3 hours. */
 function fillSetup(overrides) {
   return buildInput({
     tasks: [task({ id: 'X1' }), task({ id: 'X2' }), task({ id: 'X3' })],
-    availability: { Ana: avail(3, ['Mon'], 9, 12), Ben: avail(3, ['Mon'], 9, 12) },
+    availability: { Ana: avail(3, ['Mon'], 3), Ben: avail(3, ['Mon'], 3) },
     locked: [row({ key: 'L1', taskId: 'L', title: 'Ana locked', minutes: 120, name: 'Ana' }), row({ key: 'L2', taskId: 'L', title: 'Ben locked', minutes: 60, name: 'Ben' })],
     open: [row({ key: 'O1', taskId: 'X1', minutes: 30 }), row({ key: 'O2', taskId: 'X2', minutes: 90 })],
     ...overrides,
@@ -1122,14 +1114,13 @@ function fillSetup(overrides) {
 }
 
 test('schedFillOpen: returns only the open rows, assigned with locked capacity counted', () => {
-  const { rows, unfilled, usage, shifts } = schedFillOpen(fillSetup());
+  const { rows, unfilled, usage } = schedFillOpen(fillSetup());
   assert.deepStrictEqual(rows.map((r) => r.key).sort(), ['O1', 'O2']);
   assert.strictEqual(byKey(rows, 'O2').name, 'Ben', '90 goes first, and Ana only has 60 left');
   assert.strictEqual(byKey(rows, 'O1').name, 'Ana', '30 fits in her 60');
   assert.deepStrictEqual(unfilled, []);
   assert.strictEqual(usage.Ana.minutes, 150);
   assert.strictEqual(usage.Ben.minutes, 150);
-  assert.deepStrictEqual(shifts.map((s) => [s.name, s.start, s.end]), [['Ana', '09:00', '11:30'], ['Ben', '09:00', '11:30']]);
 });
 
 test('schedFillOpen: does not change its input or move anyone else', () => {
@@ -1154,17 +1145,17 @@ test('schedFillOpen: pool limits who can take the work', () => {
   assert.deepStrictEqual(rows.map((r) => r.name), ['', ''], 'Cora has no availability');
 });
 
-test('schedFillOpen: locked rows use up both the block and the week', () => {
-  const blockFull = fillSetup({
-    availability: { Ana: avail(10, ['Mon'], 9, 12) },
+test('schedFillOpen: locked rows use up both the day and the week', () => {
+  const dayFull = fillSetup({
+    availability: { Ana: avail(10, ['Mon'], 3) },
     locked: [row({ key: 'L1', minutes: 180, name: 'Ana' })],
     open: [row({ key: 'O1', minutes: 5 })],
   });
-  assert.strictEqual(schedFillOpen(blockFull).rows[0].name, '');
+  assert.strictEqual(schedFillOpen(dayFull).rows[0].name, '');
 
   const weekFull = (minutes) =>
     fillSetup({
-      availability: { Ana: avail(1, ['Mon', 'Tue'], 9, 12) },
+      availability: { Ana: avail(1, ['Mon', 'Tue'], 3) },
       locked: [row({ key: 'L1', date: TUE, day: 'Tue', minutes: 60, name: 'Ana' })],
       open: [row({ key: 'O1', minutes })],
     });
@@ -1174,7 +1165,7 @@ test('schedFillOpen: locked rows use up both the block and the week', () => {
 
 test('schedFillOpen: an open row also listed in locked does not count against itself', () => {
   const open = row({ key: 'O1', minutes: 180 });
-  const input = fillSetup({ availability: { Ana: avail(3, ['Mon'], 9, 12) }, locked: [{ ...open, name: 'Ana' }], open: [open] });
+  const input = fillSetup({ availability: { Ana: avail(3, ['Mon'], 3) }, locked: [{ ...open, name: 'Ana' }], open: [open] });
   const result = schedFillOpen(input);
   assert.strictEqual(result.rows[0].name, 'Ana');
   assert.strictEqual(result.usage.Ana.minutes, 180, 'counted once');
@@ -1195,13 +1186,12 @@ test('schedFillOpen: a late submitter picks up only what is left, and nobody els
   assert.strictEqual(late.usage.Ana.minutes, 340);
   assert.strictEqual(late.usage.Ben.minutes, 185);
   assert.strictEqual(late.usage.Cora.minutes, 55);
-  assert.strictEqual(late.shifts.length, 6, 'shifts cover the whole week, so the caller can rewrite them');
 });
 
 test('schedFillOpen: follows the same rules for rank, priority, flex and Sunday', () => {
   const input = buildInput({
     tasks: [task({ id: 'X1', flexDays: 1 }), task({ id: 'X2', flexDays: 1 })],
-    availability: { Ben: avail(2, ['Tue', 'Sun'], 9, 12), Ana: avail(1, ['Tue'], 9, 10) },
+    availability: { Ben: avail(2, ['Tue', 'Sun'], 3), Ana: avail(1, ['Tue'], 1) },
     open: [
       row({ key: 'LOW', taskId: 'X1', priority: 'C', minutes: 60 }),
       row({ key: 'HIGH', taskId: 'X2', priority: 'A', minutes: 60 }),
@@ -1218,7 +1208,7 @@ test('schedFillOpen: follows the same rules for rank, priority, flex and Sunday'
 test('schedFillOpen: the window still reaches a Sunday the task lists', () => {
   const input = buildInput({
     tasks: [task({ id: 'X1', days: ['Sat', 'Sun'], flexDays: 1 })],
-    availability: { Ana: avail(6, ['Sun'], 9, 12) },
+    availability: { Ana: avail(6, ['Sun'], 3) },
     open: [row({ key: 'O1', taskId: 'X1', date: SAT, day: 'Sat' })],
   });
   const got = schedFillOpen(input).rows[0];
@@ -1227,7 +1217,7 @@ test('schedFillOpen: the window still reaches a Sunday the task lists', () => {
 
 test('schedFillOpen: task order breaks a tie, and a blank priority comes from the task', () => {
   const tasks = [task({ id: 'LATER', order: 2 }), task({ id: 'SOONER', order: 1 }), task({ id: 'TOP', priority: 'A', order: 3 })];
-  const availability = { Ana: avail(1, ['Mon'], 9, 10) };
+  const availability = { Ana: avail(1, ['Mon'], 1) };
   // The keys run the opposite way from the order, so only the order can explain the winner.
   const tie = schedFillOpen(buildInput({
     tasks,
@@ -1248,7 +1238,7 @@ test('schedFillOpen: a row with no key gets one, the same as a built row would h
   const input = buildInput({
     tasks: [task({ id: 'X1' })],
     oneOffs: [oneOff({ id: 'O1' })],
-    availability: { Ana: avail(6, ['Mon'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon'], 3) },
     open: [row({ key: '', taskId: 'X1' }), row({ key: undefined, taskId: '', oneOffId: 'O1' })],
   });
   assert.deepStrictEqual(schedFillOpen(input).rows.map((r) => r.key).sort(), ['oneoff|O1', 'task|X1|' + MON]);
@@ -1256,7 +1246,7 @@ test('schedFillOpen: a row with no key gets one, the same as a built row would h
 
 test('schedFillOpen: a released set row becomes cover', () => {
   const input = buildInput({
-    availability: { Ana: avail(6, ['Thu'], 9, 12) },
+    availability: { Ana: avail(6, ['Thu'], 3) },
     open: [row({ key: 'set-thu', taskId: 'T08', date: THU, day: 'Thu', minutes: 60, source: 'set', priority: 'A+++++' })],
   });
   const got = schedFillOpen(input).rows[0];
@@ -1265,7 +1255,7 @@ test('schedFillOpen: a released set row becomes cover', () => {
 
 test('schedFillOpen: keeps the source the caller set, and any extra fields on the row', () => {
   const input = buildInput({
-    availability: { Ana: avail(6, ['Mon'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon'], 3) },
     open: [row({ key: 'O1', source: 'late', _row: 42, status: 'open' }), row({ key: 'O2', source: '', minutes: 5 })],
   });
   const { rows } = schedFillOpen(input);
@@ -1274,7 +1264,7 @@ test('schedFillOpen: keeps the source the caller set, and any extra fields on th
 });
 
 test('schedFillOpen: reassigns a row that came in with a stale name', () => {
-  const input = buildInput({ availability: { Cora: avail(6, ['Mon'], 9, 12) }, open: [row({ key: 'O1', name: 'Ana' })] });
+  const input = buildInput({ availability: { Cora: avail(6, ['Mon'], 3) }, open: [row({ key: 'O1', name: 'Ana' })] });
   assert.strictEqual(schedFillOpen(input).rows[0].name, 'Cora');
   const nobody = schedFillOpen(buildInput({ open: [row({ key: 'O1', name: 'Ana' })] }));
   assert.strictEqual(nobody.rows[0].name, '');
@@ -1285,14 +1275,14 @@ test('schedFillOpen: never loses a row it cannot place', () => {
   const closed = buildInput({
     tasks: [task({ id: 'X1' })],
     closedDays: [MON],
-    availability: { Ana: avail(6, ['Mon'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon'], 3) },
     open: [row({ key: 'O1', taskId: 'X1' })],
   });
   let result = schedFillOpen(closed);
   assert.deepStrictEqual([result.rows[0].name, result.rows[0].date], ['', MON]);
   assert.strictEqual(result.unfilled.length, 1);
 
-  const past = buildInput({ tasks: [task({ id: 'X1' })], today: WED, availability: { Ana: avail(6, ['Mon'], 9, 12) }, open: [row({ key: 'O1', taskId: 'X1' })] });
+  const past = buildInput({ tasks: [task({ id: 'X1' })], today: WED, availability: { Ana: avail(6, ['Mon'], 3) }, open: [row({ key: 'O1', taskId: 'X1' })] });
   result = schedFillOpen(past);
   assert.strictEqual(result.rows[0].name, '');
   assert.strictEqual(result.unfilled.length, 1);
@@ -1301,7 +1291,7 @@ test('schedFillOpen: never loses a row it cannot place', () => {
 test('schedFillOpen: a new one-off in a published week follows who and goes people-first', () => {
   const input = buildInput({
     oneOffs: [oneOff({ id: 'O1', who: ['Cora'], minutes: 60 })],
-    availability: { Ana: avail(6, ['Mon'], 9, 12), Cora: avail(6, ['Mon', 'Wed'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon'], 3), Cora: avail(6, ['Mon', 'Wed'], 3) },
     locked: [row({ key: 'L1', date: WED, day: 'Wed', minutes: 60, name: 'Cora' })],
     open: [row({ key: 'oneoff|O1', taskId: '', oneOffId: 'O1', date: '', day: '' })],
   });
@@ -1312,7 +1302,7 @@ test('schedFillOpen: a new one-off in a published week follows who and goes peop
 test('schedFillOpen: a pinned one-off with no date yet is placed on its pinned day', () => {
   const input = buildInput({
     oneOffs: [oneOff({ id: 'O1', day: 'Wed' })],
-    availability: { Ana: avail(6, ['Mon', 'Wed'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon', 'Wed'], 3) },
     open: [row({ key: 'oneoff|O1', taskId: '', oneOffId: 'O1', date: '', day: '' })],
   });
   const got = schedFillOpen(input).rows[0];
@@ -1323,7 +1313,7 @@ test('schedFillOpen: a pinned one-off whose day has passed stands for today', ()
   const input = buildInput({
     today: WED,
     oneOffs: [oneOff({ id: 'O1', day: 'Mon' })],
-    availability: { Ana: avail(6, ['Wed'], 9, 12) },
+    availability: { Ana: avail(6, ['Wed'], 3) },
     open: [row({ key: 'oneoff|O1', taskId: '', oneOffId: 'O1', date: MON })],
   });
   const got = schedFillOpen(input).rows[0];
@@ -1348,13 +1338,13 @@ test('schedFillOpen: a no-day one-off nobody can take stays on its date, if that
 test('schedFillOpen: a rolling partial one-off goes back to full size each time', () => {
   const input = buildInput({
     oneOffs: [oneOff({ id: 'O1', minutes: 300 })],
-    availability: { Ana: avail(6, ['Tue'], 9, 13) },
+    availability: { Ana: avail(6, ['Tue'], 4) },
     open: [row({ key: 'oneoff|O1', taskId: '', oneOffId: 'O1', minutes: 55, partial: true, date: TUE, day: 'Tue' })],
   });
   const got = schedFillOpen(input).rows[0];
   assert.deepStrictEqual([got.name, got.minutes, got.partial], ['Ana', 240, true]);
 
-  const fits = buildInput({ ...input, availability: { Ana: avail(6, ['Tue'], 8, 14) } });
+  const fits = buildInput({ ...input, availability: { Ana: avail(6, ['Tue'], 6) } });
   const whole = schedFillOpen(fits).rows[0];
   assert.deepStrictEqual([whole.minutes, whole.partial], [300, false]);
 });
@@ -1368,7 +1358,7 @@ test('schedFillOpen: a one-off for a manager still needs the manager in the pool
 
 test('schedFillOpen: an unknown task or one-off still works from the row itself', () => {
   const input = buildInput({
-    availability: { Ana: avail(6, ['Mon', 'Tue'], 9, 12) },
+    availability: { Ana: avail(6, ['Mon', 'Tue'], 3) },
     open: [
       row({ key: 'O1', taskId: 'GONE', date: MON }),
       row({ key: 'O2', taskId: '', oneOffId: 'GONE', date: TUE, day: 'Tue', who: ['Ana'] }),
@@ -1385,7 +1375,7 @@ test('schedFillOpen: tidies only open rows, and only into days they already work
   const lockedTue = row({ key: 'L1', taskId: 'Y1', date: TUE, day: 'Tue', minutes: 15, name: 'Ana' });
   const lockedMon = row({ key: 'L2', taskId: 'Y1', date: MON, day: 'Mon', minutes: 15, name: 'Ana' });
   const tasks = [task({ id: 'X1', flexDays: 1 })];
-  const availability = { Ana: avail(6, ['Mon', 'Tue'], 9, 12) };
+  const availability = { Ana: avail(6, ['Mon', 'Tue'], 3) };
   const open = [row({ key: 'O1', taskId: 'X1', minutes: 15 })];
 
   let result = schedFillOpen(buildInput({ tasks, availability, open, locked: [lockedTue] }));
@@ -1401,7 +1391,7 @@ test('schedFillOpen: tidy leaves a row on a day the person already has locked wo
   const lockedFri = row({ key: 'L1', taskId: 'Y1', date: FRI, day: 'Fri', minutes: 15, name: 'Ana' });
   const lockedSat = row({ key: 'L2', taskId: 'Y1', date: SAT, day: 'Sat', minutes: 15, name: 'Ana' });
   const tasks = [task({ id: 'X1', days: ['Sat'], flexDays: 1 })];
-  const availability = { Ana: avail(6, ['Fri', 'Sat'], 9, 12) };
+  const availability = { Ana: avail(6, ['Fri', 'Sat'], 3) };
   const open = [row({ key: 'O1', taskId: 'X1', date: SAT, day: 'Sat', minutes: 15 })];
   assert.strictEqual(schedFillOpen(buildInput({ tasks, availability, open, locked: [lockedFri, lockedSat] })).rows[0].date, SAT, 'she is coming in Saturday anyway');
   assert.strictEqual(schedFillOpen(buildInput({ tasks, availability, open, locked: [lockedFri] })).rows[0].date, FRI, 'she is only coming in Friday');
@@ -1409,44 +1399,31 @@ test('schedFillOpen: tidy leaves a row on a day the person already has locked wo
 
 /* --------------------------------------------------------- now and before today ---- */
 
-test('nowMinutes: stops new work in a block that has already ended today', () => {
-  const availability = { Ana: avail(6, ['Mon'], 9, 12), Cora: avail(6, ['Mon'], 9, 17) };
-  const at = (nowMinutes) => placeOne({ days: ['Mon'] }, availability, { today: MON, nowMinutes }).name;
-  assert.strictEqual(at(600), 'Ana', '10:00, the block is still going');
-  assert.strictEqual(at(719), 'Ana', '11:59, the block is still going');
-  assert.strictEqual(at(720), 'Cora', '12:00, the block is over');
-  assert.strictEqual(at(1020), '', '5:00 PM, everyone is done');
+test('no time of day: capacity today is the hours offered that day, whatever the clock says', () => {
+  const availability = { Ana: avail(6, ['Mon'], 3), Cora: avail(6, ['Mon'], 8) };
+  [undefined, 0, 600, 720, 1020, 1439].forEach((nowMinutes) => {
+    const placed = placeOne({ days: ['Mon'] }, availability, { today: MON, nowMinutes });
+    assert.deepStrictEqual([placed.name, placed.date], ['Ana', MON], `nowMinutes ${nowMinutes} changes nothing`);
+  });
+  const late = schedFillOpen(buildInput({ today: MON, nowMinutes: 1439, availability, open: [row({ key: 'O1', date: MON })] })).rows[0];
+  assert.strictEqual(late.name, 'Ana', 'the same in schedFillOpen');
+  const oneOffRow = run({ tasks: [], today: MON, nowMinutes: 1439, oneOffs: [oneOff()], availability }).rows[0];
+  assert.deepStrictEqual([oneOffRow.name, oneOffRow.date], ['Ana', MON], 'and for a one-off with no day');
 });
 
-test('nowMinutes: only counts blocks still to come when finding the largest', () => {
-  const availability = { Ana: { none: false, hoursWanted: 10, slots: { Mon: [9, 10, 11, 14, 15] } } };
-  const before = (minutes) => placeOne({ days: ['Mon'], minutes }, availability, { today: MON, nowMinutes: 480 }).name;
-  const after = (minutes) => placeOne({ days: ['Mon'], minutes }, availability, { today: MON, nowMinutes: 720 }).name;
-  assert.strictEqual(before(180), 'Ana', 'at 8:00 the 3-hour block is still ahead');
-  assert.strictEqual(after(120), 'Ana', 'at noon the 2-hour block is what is left');
-  assert.strictEqual(after(121), '');
-});
-
-test('nowMinutes: only applies to today, and movable work slides to another day', () => {
-  const availability = { Ana: avail(6, ['Mon', 'Tue'], 9, 12) };
-  const tomorrow = placeOne({ days: ['Tue'] }, availability, { today: MON, nowMinutes: 1020 });
-  assert.deepStrictEqual([tomorrow.name, tomorrow.date], ['Ana', TUE]);
-  const slid = placeOne({ days: ['Mon'], flexDays: 1 }, availability, { today: MON, nowMinutes: 1020 });
-  assert.deepStrictEqual([slid.name, slid.date], ['Ana', TUE]);
-  const noClock = placeOne({ days: ['Mon'] }, availability, { today: MON, nowMinutes: undefined });
-  assert.strictEqual(noClock.name, 'Ana', 'with no time given, no block has ended');
-});
-
-test('nowMinutes: applies in schedFillOpen and to no-day one-offs too', () => {
-  const availability = { Ana: avail(6, ['Mon', 'Wed'], 9, 12) };
-  const got = schedFillOpen(buildInput({ today: MON, nowMinutes: 720, availability, open: [row({ key: 'O1', date: MON })] })).rows[0];
-  assert.strictEqual(got.name, '');
-  const oneOffRow = run({ tasks: [], today: MON, nowMinutes: 720, oneOffs: [oneOff()], availability }).rows[0];
-  assert.deepStrictEqual([oneOffRow.name, oneOffRow.date], ['Ana', WED]);
+test('no time of day: what they already have that day still comes off, today or any other day', () => {
+  const availability = { Ana: avail(6, ['Mon', 'Tue'], 2) };
+  const locked = (date, day) => [row({ key: 'L1', taskId: 'L', minutes: 90, date, day, name: 'Ana' })];
+  const open = (date, minutes) => [row({ key: 'O1', minutes, date })];
+  const fill = (date, day, minutes) => schedFillOpen(buildInput({ today: MON, availability, locked: locked(date, day), open: open(date, minutes) })).rows[0].name;
+  assert.strictEqual(fill(MON, 'Mon', 30), 'Ana', '30 is what is left today');
+  assert.strictEqual(fill(MON, 'Mon', 31), '');
+  assert.strictEqual(fill(TUE, 'Tue', 30), 'Ana', 'the same tomorrow');
+  assert.strictEqual(fill(TUE, 'Tue', 31), '');
 });
 
 test('no work before today: set rows, recurring rows and windows all respect it', () => {
-  const { rows } = run({ today: WED, availability: { Cora: avail(20, MON_SAT, 8, 16) } });
+  const { rows } = run({ today: WED, availability: { Cora: avail(20, MON_SAT, 8) } });
   assert.deepStrictEqual(rows.filter((r) => r.date < WED), []);
   assert.ok(!rows.some((r) => r.name === 'Hal'), 'Hal only works Tuesday, which has passed');
   assert.ok(rows.some((r) => r.name === 'Ivy' && r.date === WED), 'Ivy works today');
@@ -1458,78 +1435,21 @@ test('no work before today: set rows, recurring rows and windows all respect it'
 });
 
 test('no work before today: a week that has fully passed makes no recurring or set rows', () => {
-  const { rows } = run({ today: '2026-11-20', availability: { Cora: avail(20, MON_SAT, 8, 16) } });
+  const { rows } = run({ today: '2026-11-20', availability: { Cora: avail(20, MON_SAT, 8) } });
   assert.deepStrictEqual(rows, []);
 });
 
 test('no work before today: today itself is fine, and a week still ahead is untouched', () => {
-  const placed = placeOne({ days: ['Wed'] }, { Ana: avail(5, ['Wed'], 9, 12) }, { today: WED, nowMinutes: 420 });
+  const placed = placeOne({ days: ['Wed'] }, { Ana: avail(5, ['Wed'], 3) }, { today: WED });
   assert.deepStrictEqual([placed.name, placed.date], ['Ana', WED]);
-  const anytime = run({ today: undefined, nowMinutes: undefined, availability: workedExampleAvailability() });
+  const anytime = run({ today: undefined, availability: workedExampleAvailability() });
   assert.deepStrictEqual(minutesByPersonDay(anytime.rows).Ana, { Mon: 125, Wed: 85, Fri: 130 });
 });
 
-/* ---------------------------------------------------------------- schedShifts ---- */
-
-test('schedShifts: ends at start + total minutes, rounded up to the next 15', () => {
-  const availability = { Ana: avail(6, ['Mon'], 9, 12) };
-  const endFor = (minutes) => schedShifts([{ name: 'Ana', date: MON, minutes }], availability, MON)[0];
-  assert.deepStrictEqual(endFor(125), { name: 'Ana', date: MON, start: '09:00', end: '11:15', minutes: 135 });
-  assert.deepStrictEqual(endFor(120), { name: 'Ana', date: MON, start: '09:00', end: '11:00', minutes: 120 }, 'already on a quarter hour');
-  assert.strictEqual(endFor(121).end, '11:15');
-  assert.strictEqual(endFor(135).end, '11:15');
-  assert.strictEqual(endFor(136).end, '11:30');
-  assert.strictEqual(endFor(1).end, '09:15');
-});
-
-test('schedShifts: adds up the day, and starts at the largest block', () => {
-  const availability = { Ana: { none: false, hoursWanted: 9, slots: { Mon: [6, 10, 11, 12, 16, 17] } } };
-  const rows = [
-    { name: 'Ana', date: MON, minutes: 15 },
-    { name: 'Ana', date: MON, minutes: 10 },
-    { name: 'Ana', date: MON, minutes: '5' },
-  ];
-  assert.deepStrictEqual(schedShifts(rows, availability, MON), [{ name: 'Ana', date: MON, start: '10:00', end: '10:30', minutes: 30 }]);
-});
-
-test('schedShifts: on a tie the earlier block wins, and afternoon times read on a 24-hour clock', () => {
-  const availability = { Ana: { none: false, hoursWanted: 9, slots: { Mon: [14, 15], Tue: [9, 10, 14, 15] } } };
-  const rows = [{ name: 'Ana', date: MON, minutes: 50 }, { name: 'Ana', date: TUE, minutes: 50 }];
-  assert.deepStrictEqual(schedShifts(rows, availability, MON).map((s) => [s.start, s.end]), [['14:00', '15:00'], ['09:00', '10:00']]);
-});
-
-test('schedShifts: nothing for uncovered rows, people with no availability, days they did not offer, or other weeks', () => {
-  const availability = { Ana: avail(6, ['Mon'], 9, 12), Cora: { none: true, hoursWanted: 0, slots: { Mon: [9] } } };
-  const rows = [
-    { name: '', date: MON, minutes: 30 },
-    { name: 'Gus', date: MON, minutes: 30 },
-    { name: 'Cora', date: MON, minutes: 30 },
-    { name: 'Ana', date: TUE, minutes: 30 },
-    { name: 'Ana', date: '2026-11-16', minutes: 30 },
-    { name: 'Ana', date: '2026-11-08', minutes: 30 },
-  ];
-  assert.deepStrictEqual(schedShifts(rows, availability, MON), []);
-  assert.deepStrictEqual(schedShifts([], availability, MON), []);
-  assert.deepStrictEqual(schedShifts(undefined, undefined, MON), []);
-});
-
-test('schedShifts: sorted by date then name, whatever order the rows are in', () => {
-  const availability = { Ana: avail(6, ['Mon', 'Tue'], 9, 12), Ben: avail(6, ['Mon'], 9, 12) };
-  const rows = [{ name: 'Ana', date: TUE, minutes: 30 }, { name: 'Ben', date: MON, minutes: 30 }, { name: 'Ana', date: MON, minutes: 30 }];
-  assert.deepStrictEqual(schedShifts(rows, availability, MON).map((s) => [s.date, s.name]), [[MON, 'Ana'], [MON, 'Ben'], [TUE, 'Ana']]);
-});
-
-test('schedShifts: a stacked-up day never reads past midnight', () => {
-  const shift = schedShifts([{ name: 'Ana', date: MON, minutes: 600 }], { Ana: avail(6, ['Mon'], 21, 22) }, MON)[0];
-  assert.deepStrictEqual([shift.start, shift.end, shift.minutes], ['21:00', '23:45', 165]);
-});
-
-test('build results: set staff and managers get no shift, even with a stray availability entry', () => {
-  const { shifts } = run({
-    oneOffs: [oneOff({ who: ['Max'], day: 'Mon' })],
-    availability: { Gus: avail(6, ['Thu'], 9, 12), Max: avail(6, ['Mon'], 9, 12) },
-  });
-  assert.deepStrictEqual(shifts, []);
+test('build results: no times come back from matching at all', () => {
+  const result = run({ availability: workedExampleAvailability() });
+  assert.deepStrictEqual(Object.keys(result).sort(), ['rows', 'unfilled', 'usage']);
+  result.rows.forEach((r) => assert.deepStrictEqual(Object.keys(r).sort(), ROW_FIELDS.slice().sort()));
 });
 
 /* ------------------------------------------------------------ dates and DST ---- */
@@ -1540,7 +1460,7 @@ function realDay(date) {
 }
 
 test('week of 2027-03-08 (clocks go forward Sunday): the right dates, every day exactly once', () => {
-  const { rows } = run({ weekOf: '2027-03-08', today: '2027-03-05', availability: { Cora: avail(20, MON_SAT, 8, 16) } });
+  const { rows } = run({ weekOf: '2027-03-08', today: '2027-03-05', availability: { Cora: avail(20, MON_SAT, 8) } });
   assert.deepStrictEqual(byTask(rows, 'T01').map((r) => [r.date, r.day]), [
     ['2027-03-08', 'Mon'],
     ['2027-03-09', 'Tue'],
@@ -1554,25 +1474,25 @@ test('week of 2027-03-08 (clocks go forward Sunday): the right dates, every day 
 });
 
 test('week of 2026-10-26 (clocks go back Sunday, month rolls over): the right dates, every day exactly once', () => {
-  const { rows } = run({ weekOf: '2026-10-26', today: '2026-10-23', availability: { Cora: avail(20, MON_SAT, 8, 16) } });
+  const { rows } = run({ weekOf: '2026-10-26', today: '2026-10-23', availability: { Cora: avail(20, MON_SAT, 8) } });
   assert.deepStrictEqual(byTask(rows, 'T01').map((r) => r.date), ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31']);
   assert.deepStrictEqual(rows.filter((r) => r.name === 'Jo').map((r) => [r.date, r.day]), [['2026-11-01', 'Sun']]);
   assert.deepStrictEqual(rows.filter((r) => r.name === 'Gus').map((r) => r.date), ['2026-10-29', '2026-10-30', '2026-11-01']);
   rows.forEach((r) => assert.strictEqual(r.day, realDay(r.date)));
 });
 
-test('DST weeks: time off, closed days and shifts land on the right dates', () => {
+test('DST weeks: time off, closed days and work land on the right dates', () => {
   const spring = run({
     weekOf: '2027-03-08',
     today: '2027-03-05',
     tasks: [task({ id: 'X1', days: ['Sun'], minutes: 90 }), task({ id: 'S1', setOnly: true, days: [], minutes: 60 })],
     staff: [{ name: 'Gus', rank: 1, type: 'Set', active: true, setDays: ['Sat', 'Sun'], setTasks: [{ taskId: 'S1', days: null }] }, ...STAFF.filter((p) => p.type === 'Flexible')],
-    availability: { Ana: avail(6, ['Sun'], 5, 8) },
+    availability: { Ana: avail(6, ['Sun'], 3) },
     timeOff: [{ name: 'Gus', from: '2027-03-14', to: '2027-03-14' }],
   });
   assert.strictEqual(byKey(spring.rows, 'set|S1|2027-03-13|Gus').source, 'set');
   assert.strictEqual(byKey(spring.rows, 'set|S1|2027-03-14|Gus').source, 'cover');
-  assert.deepStrictEqual(spring.shifts, [{ name: 'Ana', date: '2027-03-14', start: '05:00', end: '07:30', minutes: 150 }]);
+  assert.deepStrictEqual(spring.usage.Ana.byDate, { '2027-03-14': 150 });
 
   const fall = run({ weekOf: '2026-10-26', today: '2026-10-23', closedDays: ['2026-11-01'], availability: {} });
   assert.deepStrictEqual(fall.rows.filter((r) => r.date === '2026-11-01'), []);
@@ -1592,7 +1512,7 @@ test('the time zone of the machine changes nothing', () => {
     const results = zones.map((zone) => {
       process.env.TZ = zone;
       offsets.add(new Date(Date.UTC(2027, 2, 14, 12)).getTimezoneOffset());
-      return ['2027-03-08', '2026-10-26'].map((weekOf) => JSON.stringify(run({ weekOf, today: weekOf, nowMinutes: 0, availability: workedExampleAvailability() })));
+      return ['2027-03-08', '2026-10-26'].map((weekOf) => JSON.stringify(run({ weekOf, today: weekOf, availability: workedExampleAvailability() })));
     });
     assert.ok(offsets.size > 1, 'the zone change needs to actually take effect for this test to mean anything');
     results.forEach((result) => assert.deepStrictEqual(result, results[0]));
@@ -1639,7 +1559,6 @@ test('the order of the input lists does not change the output', () => {
   const a = schedBuildWeek(busyInput());
   const b = schedBuildWeek(shuffled);
   assert.deepStrictEqual(b.rows, a.rows);
-  assert.deepStrictEqual(b.shifts, a.shifts);
   assert.deepStrictEqual(b.unfilled, a.unfilled);
 });
 
@@ -1696,14 +1615,11 @@ function randomWeek(seed) {
   const availability = {};
   flexible.forEach((name) => {
     if (r.chance(0.15)) return; // never submitted
-    const slots = {};
+    const dayHours = {};
     days.forEach((day) => {
-      if (!r.chance(0.55)) return;
-      const hours = [];
-      for (let hour = 5; hour <= 21; hour++) if (r.chance(0.45)) hours.push(hour);
-      slots[day] = hours;
+      if (r.chance(0.55)) dayHours[day] = r.int(1, 32) / 2;
     });
-    availability[name] = { none: r.chance(0.1), hoursWanted: r.int(0, 24) / 2, slots };
+    availability[name] = { none: r.chance(0.1), hoursWanted: r.int(0, 24) / 2, dayHours };
   });
 
   const seedRows = SEED_TASKS_.filter(() => r.chance(0.7)).map((t) => ({ ...t }));
@@ -1739,7 +1655,6 @@ function randomWeek(seed) {
 
   return buildInput({
     today: r.chance(0.5) ? '2026-11-06' : r.pick(week),
-    nowMinutes: r.int(0, 1439),
     tasks: seedRows.concat(extra),
     oneOffs,
     availability,
@@ -1784,16 +1699,8 @@ function assertWeekIsLegal(input, result, seed) {
     const [name, date] = id.split('|');
     const entry = input.availability[name];
     assert.ok(entry && !entry.none, `seed ${seed}: ${name} has no availability but has work`);
-    // Worked out from scratch here: split the hours into blocks and keep the longest that hasn't ended.
-    const hours = (entry.slots[realDay(date)] || []).slice().sort((a, b) => a - b);
-    const blocks = [];
-    hours.forEach((hour, i) => {
-      if (i > 0 && hour === hours[i - 1] + 1) blocks[blocks.length - 1].end = hour + 1;
-      else blocks.push({ start: hour, end: hour + 1 });
-    });
-    const stillOn = blocks.filter((b) => date !== input.today || b.end * 60 > input.nowMinutes);
-    const best = Math.max(0, ...stillOn.map((b) => b.end - b.start));
-    assert.ok(minutes <= best * 60, `seed ${seed}: ${id} has ${minutes} minutes in a block of ${best} hours`);
+    const offered = entry.dayHours[realDay(date)] || 0;
+    assert.ok(minutes <= offered * 60, `seed ${seed}: ${id} has ${minutes} minutes on a day with ${offered} hours offered`);
   });
 
   Object.entries(usedWeek).forEach(([name, minutes]) => {
@@ -1806,7 +1713,7 @@ function assertWeekIsLegal(input, result, seed) {
   assert.strictEqual(new Set(keys).size, keys.length, `seed ${seed}: duplicate keys`);
 }
 
-test('500 random weeks: nobody passes a block or their hours, and nothing lands where it should not', () => {
+test('500 random weeks: nobody passes their hours for the day or the week, and nothing lands where it should not', () => {
   for (let seed = 1; seed <= 500; seed++) {
     const input = randomWeek(seed);
     const result = schedBuildWeek(input);
@@ -1857,7 +1764,7 @@ test('both files load side by side in one global scope, the way Apps Script runs
   const scope = vm.createContext({});
   vm.runInContext(fs.readFileSync(SEED_PATH, 'utf8'), scope);
   vm.runInContext(fs.readFileSync(SCHEDULER_PATH, 'utf8'), scope);
-  ['schedPriorityScore', 'schedBuildWeek', 'schedFillOpen', 'schedShifts'].forEach((name) => assert.strictEqual(typeof scope[name], 'function', name));
+  ['schedPriorityScore', 'schedBuildWeek', 'schedFillOpen'].forEach((name) => assert.strictEqual(typeof scope[name], 'function', name));
   assert.strictEqual(scope.SEED_TASKS_.length, 15);
 
   // Same answer as under Node, with the real tasks from the global scope.
@@ -1871,7 +1778,7 @@ test('every top-level name in Scheduler.js is a public function or ends in an un
   const code = fs.readFileSync(SCHEDULER_PATH, 'utf8');
   const names = [...code.matchAll(/^(?:function|var|const|let)\s+([A-Za-z0-9_$]+)/gm)].map((m) => m[1]);
   assert.ok(names.length > 20);
-  const publicNames = ['schedPriorityScore', 'schedBuildWeek', 'schedFillOpen', 'schedShifts'];
+  const publicNames = ['schedPriorityScore', 'schedBuildWeek', 'schedFillOpen'];
   names.forEach((name) => {
     assert.ok(publicNames.includes(name) || name.endsWith('_'), `${name} should end in an underscore`);
     assert.ok(/^(sched|SCHED_)/.test(name), `${name} should start with sched so it can't clash with another file`);
@@ -1883,7 +1790,7 @@ test('every top-level name in Scheduler.js is a public function or ends in an un
 
 test('one task, one day: a moved row never lands on a day that task already has', () => {
   // Free only Tue and Thu: T03 and T09 from Mon, Wed and Fri all want Tue or Thu.
-  const { rows } = run({ availability: { Ana: avail(20, ['Tue', 'Thu'], 8, 16) } });
+  const { rows } = run({ availability: { Ana: avail(20, ['Tue', 'Thu'], 8) } });
   ['T03', 'T09'].forEach((taskId) => {
     const placed = byTask(rows, taskId).filter((r) => r.name);
     assert.strictEqual(new Set(placed.map((r) => r.date)).size, placed.length, `${taskId} is on a day only once`);
@@ -1895,7 +1802,7 @@ test('one task, one day: a moved row never lands on a day that task already has'
 });
 
 test('one task, one day: cover doesn\'t land on a day the set person is doing that task', () => {
-  const { rows } = run({ availability: { Ana: avail(6, ['Fri'], 9, 12) }, timeOff: [{ name: 'Gus', from: THU, to: THU }] });
+  const { rows } = run({ availability: { Ana: avail(6, ['Fri'], 3) }, timeOff: [{ name: 'Gus', from: THU, to: THU }] });
   const cover = byKey(rows, `set|T08|${THU}|Gus`);
   assert.deepStrictEqual([cover.name, cover.date], ['', THU], 'it waits on its own day for a manager');
   assert.strictEqual(byKey(rows, `set|T08|${FRI}|Gus`).name, 'Gus');
@@ -1905,7 +1812,7 @@ test('one task, one day: a row already locked on that day counts too', () => {
   const locked = [row({ key: 'task|T03|' + WED, taskId: 'T03', date: WED, day: 'Wed', minutes: 15, name: 'Ben' })];
   const open = [row({ key: 'task|T03|' + TUE, taskId: 'T03', date: TUE, day: 'Tue', minutes: 15 })];
   const tasks = [task({ id: 'T03', days: ['Tue', 'Wed'], flexDays: 1 })];
-  const result = schedFillOpen(buildInput({ tasks, availability: { Ana: avail(6, ['Wed'], 9, 12) }, open, locked }));
+  const result = schedFillOpen(buildInput({ tasks, availability: { Ana: avail(6, ['Wed'], 3) }, open, locked }));
   assert.deepStrictEqual([result.rows[0].name, result.rows[0].date], ['', TUE]);
 });
 
@@ -1935,11 +1842,3 @@ test('one task, one day: holds across lots of thin weeks', () => {
   }
 });
 
-test('rule 11: a day with every hour marked means any time, so the shift shows 9 AM, not 5 AM', () => {
-  const availability = { Ana: avail(20, ['Mon', 'Tue'], 5, 22) };
-  const shifts = schedShifts([row({ name: 'Ana', minutes: 135 })], availability, MON);
-  assert.deepStrictEqual(shifts, [{ name: 'Ana', date: MON, start: '09:00', end: '11:15', minutes: 135 }]);
-
-  const nearly = schedShifts([row({ name: 'Ana', minutes: 60 })], { Ana: avail(20, ['Mon'], 5, 21) }, MON);
-  assert.strictEqual(nearly[0].start, '05:00', 'anything less than the whole day is what they said');
-});

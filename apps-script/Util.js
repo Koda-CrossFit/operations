@@ -36,7 +36,6 @@ function nowInfo_() {
     day: dayKey_(date),
     hour: hour,
     minute: minute,
-    minutes: hour * 60 + minute,
     monday: mondayOf_(date),
     month: date.slice(0, 7),
   };
@@ -283,13 +282,6 @@ function typedDate_(year, month, day) {
   return built;
 }
 
-/** Anything from a time column -> 'HH:MM', or ''. */
-function timeString_(value) {
-  if (isDate_(value)) return denver_(value, 'HH:mm');
-  var match = /^(\d{1,2}):(\d{2})/.exec(text_(value));
-  return match ? pad2_(Number(match[1])) + ':' + match[2] : '';
-}
-
 /** A moment from a cell, or null. */
 function toDate_(value) {
   if (isDate_(value)) return value;
@@ -334,73 +326,39 @@ function parseSetTasks_(value) {
   });
 }
 
-/** 'Mon:9,10,11;Wed:16,17' -> {Mon:[9,10,11], Wed:[16,17]} */
-function parseSlots_(value) {
-  var slots = {};
+/** 'Mon:3;Tue:2.5' -> {Mon:3, Tue:2.5}. Anything that isn't a day and a number above zero is skipped. */
+function parseDayHours_(value) {
+  var dayHours = {};
   text_(value)
     .split(';')
     .forEach(function (part) {
       var bits = part.split(':');
       var day = text_(bits[0]);
-      if (DAY_KEYS_.indexOf(day) < 0 || !bits[1]) return;
-      var hours = bits[1]
-        .split(',')
-        .map(function (hour) {
-          return parseInt(hour, 10);
-        })
-        .filter(function (hour) {
-          return isFinite(hour);
-        });
-      if (hours.length) slots[day] = hours;
+      var hours = Number(bits[1]);
+      if (DAY_KEYS_.indexOf(day) >= 0 && bits.length === 2 && hours > 0 && isFinite(hours)) dayHours[day] = hours;
     });
-  return slots;
+  return dayHours;
 }
 
-function slotsToText_(slots) {
+function dayHoursToText_(dayHours) {
   return DAY_KEYS_.filter(function (day) {
-    return slots[day] && slots[day].length;
+    return dayHours[day] > 0;
   })
     .map(function (day) {
-      return day + ':' + slots[day].join(',');
+      return day + ':' + dayHours[day];
     })
     .join(';');
 }
 
-/** {Mon:[9,10,11], Wed:[16,17]} -> 'Mon 9 AM-12 PM; Wed 4-6 PM' */
-function slotsReadable_(slots) {
+/** {Mon:3, Tue:2.5} -> 'Mon 3 hrs; Tue 2.5 hrs' */
+function dayHoursReadable_(dayHours) {
   return DAY_KEYS_.filter(function (day) {
-    return slots[day] && slots[day].length;
+    return dayHours[day] > 0;
   })
     .map(function (day) {
-      return day + ' ' + hourBlocks_(slots[day]).map(hourRangeLabel_).join(', ');
+      return day + ' ' + dayHours[day] + (dayHours[day] === 1 ? ' hr' : ' hrs');
     })
     .join('; ');
-}
-
-function hourBlocks_(hours) {
-  var blocks = [];
-  hours
-    .slice()
-    .sort(function (a, b) {
-      return a - b;
-    })
-    .forEach(function (hour) {
-      var last = blocks[blocks.length - 1];
-      if (last && hour === last.end) last.end = hour + 1;
-      else blocks.push({ start: hour, end: hour + 1 });
-    });
-  return blocks;
-}
-
-function hourRangeLabel_(block) {
-  var noon = function (hour) {
-    return hour < 12 ? 'AM' : 'PM';
-  };
-  var number = function (hour) {
-    return ((hour + 11) % 12) + 1;
-  };
-  if (noon(block.start) === noon(block.end)) return number(block.start) + '-' + number(block.end) + ' ' + noon(block.end);
-  return number(block.start) + ' ' + noon(block.start) + '-' + number(block.end) + ' ' + noon(block.end);
 }
 
 function firstName_(name) {
@@ -553,18 +511,10 @@ function numberToDate_(value) {
   return typeof value === 'number' && value >= 0 && value <= SERIAL_MAX_ ? serialToDate_(value) : value;
 }
 
-/** A number from a time cell -> 'HH:MM', straight from the fraction of a day. Going through a date in 1899 could pick up an odd historical offset. */
-function fractionToTime_(value) {
-  var ms = Math.round((value - Math.floor(value)) * 86400000);
-  var minutes = Math.floor(ms / 60000) % 1440; // a fraction can round up to a whole day
-  return pad2_(Math.floor(minutes / 60)) + ':' + pad2_(minutes % 60);
-}
-
 /** One cell from the batch -> what getValues() would give. Dates come as plain numbers, so the column says which numbers are dates. */
 function batchCell_(tab, header, value) {
   if (value === undefined) return ''; // blank cells at the end of a row aren't sent
   if (typeof value !== 'number') return value;
-  if (columnKind_(TIME_COLUMNS_, tab, header)) return fractionToTime_(value);
   return isDateLike_(tab, header) ? numberToDate_(value) : value;
 }
 
@@ -603,7 +553,6 @@ function readTab_(tab) {
       if (!header) return;
       var value = unsafeCell_(cells[column]);
       if (columnKind_(DATE_COLUMNS_, tab, header)) value = dateString_(value);
-      else if (columnKind_(TIME_COLUMNS_, tab, header)) value = timeString_(value);
       if (value !== '') blank = false;
       row[header] = value;
     });
@@ -868,7 +817,7 @@ function availabilityRows_() {
           late: isTrue_(row['Late']),
           none: isTrue_(row['None']),
           hoursWanted: Number(row['Hours Wanted']) || 0,
-          slots: parseSlots_(row['Slots']),
+          dayHours: parseDayHours_(row['Slots']),
           readable: text_(row['Readable']),
           notes: text_(row['Notes']),
           _row: row._row,
@@ -888,7 +837,7 @@ function availabilityRow_(name, weekOf) {
   );
 }
 
-/** What matching needs: {Ana:{none, hoursWanted, slots}}. Only Flexible people, as SPEC section 2 says, so a stray row can't give a Set person a shift. */
+/** What matching needs: {Ana:{none, hoursWanted, dayHours}}. Only Flexible people, as SPEC section 2 says, so a stray row can't count for a Set person. */
 function availabilityMap_(weekOf) {
   var flexible = Object.create(null);
   staff_().forEach(function (person) {
@@ -896,7 +845,7 @@ function availabilityMap_(weekOf) {
   });
   var map = {};
   availabilityRows_().forEach(function (row) {
-    if (row.weekOf === weekOf && flexible[row.name]) map[row.name] = { none: row.none, hoursWanted: row.hoursWanted, slots: row.slots };
+    if (row.weekOf === weekOf && flexible[row.name]) map[row.name] = { none: row.none, hoursWanted: row.hoursWanted, dayHours: row.dayHours };
   });
   return map;
 }
@@ -975,22 +924,6 @@ function scheduleForWeek_(weekOf) {
   var end = addDays_(weekOf, 6);
   return scheduleRows_().filter(function (row) {
     return row.date >= weekOf && row.date <= end;
-  });
-}
-
-function shiftRows_() {
-  return typed_(TABS_.SHIFTS, function (rows) {
-    return rows.map(function (row) {
-      return {
-        weekOf: row['Week Of'],
-        date: row['Date'],
-        name: text_(row['Name']),
-        start: row['Start'],
-        end: row['End'],
-        minutes: Number(row['Minutes']) || 0,
-        _row: row._row,
-      };
-    });
   });
 }
 
