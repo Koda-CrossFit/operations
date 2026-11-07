@@ -430,10 +430,53 @@ select.input{
 /* ----- manage ----- */
 .mg-head{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
 .mg-seg{width:100%}
+@media (max-width:379.98px){.mg-seg button{padding:6px 2px;font-size:14px}}
 @media (min-width:900px){
   .mg-head{flex-direction:row;align-items:center;justify-content:space-between}
-  .mg-seg{width:360px}
+  .mg-seg{width:460px}
 }
+.ov{display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+.ov-col{display:flex;flex-direction:column;gap:12px;min-width:0}
+@media (min-width:1180px){.ov{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}}
+.ov-card{padding:16px}
+.ov-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.ov-kicker{font-size:14px;font-weight:500;color:var(--muted)}
+.ov-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}
+@media (min-width:480px){.ov-stats{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.ov-stat{padding:10px 12px;border-radius:12px;background:var(--soft)}
+.ov-stat b{display:block;font-size:24px;line-height:1.2;font-weight:700;letter-spacing:-.02em;color:var(--ink);font-variant-numeric:tabular-nums}
+.ov-stat span{display:block;font-size:14px;color:var(--muted)}
+.ov-stat.is-bad{background:#FEF3F2}
+.ov-stat.is-bad b,.ov-stat.is-bad span{color:var(--danger)}
+.ov-days{margin-top:12px}
+.ov-day{display:grid;grid-template-columns:96px minmax(0,1fr) auto;align-items:center;gap:12px;min-height:40px;border-top:1px solid var(--line);font-size:15px}
+.ov-day-name{color:var(--ink);white-space:nowrap}
+.ov-day.is-today .ov-day-name{font-weight:600}
+.ov-bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.ov-bar i{display:block;height:100%;border-radius:3px;background:var(--koda)}
+.ov-day-count{min-width:56px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ov-day-closed{grid-column:2/-1;color:var(--muted)}
+.ov-table{width:100%;margin-top:8px;border-collapse:collapse;font-size:15px}
+.ov-table th{padding:6px 0;font-size:13px;font-weight:500;color:var(--muted);text-align:left}
+.ov-table td{padding:9px 0;border-top:1px solid var(--line);color:var(--ink)}
+.ov-table .ov-num{width:86px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ov-table td.ov-num{font-weight:600}
+.ov-table td.is-zero{font-weight:400;color:var(--muted)}
+.ov-table tfoot td{font-weight:600;border-top:1px solid var(--edge)}
+.ov-name{overflow-wrap:anywhere}
+.ov-dot{display:inline-block;width:8px;height:8px;margin:0 8px 1px 0;border-radius:50%;background:var(--koda);vertical-align:middle}
+.ov-foot{margin-top:8px;font-size:14px;color:var(--muted)}
+.ov-title-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+.ov-list{margin-top:8px}
+.ov-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.ov-item-text{flex:1;min-width:0}
+.ov-item-title{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;font-size:16px;line-height:1.35;font-weight:600;color:var(--ink)}
+.ov-item.is-off .ov-item-title{color:var(--muted)}
+.ov-item-meta{font-size:14px;line-height:1.4;color:var(--muted)}
+.ov-item-count{flex:none;font-size:15px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ov-item.is-off .ov-item-count{font-weight:400;color:var(--muted)}
+.ov-sub{margin-top:20px}
+.ov-none{padding:8px 0 0}
 .wk-switch{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .wk-switch .h2{text-align:center;flex:1;min-width:0}
 .wk-arrow{display:grid;place-items:center;flex:none;width:48px;height:48px;border-radius:12px;border:1px solid var(--line);color:var(--koda)}
@@ -996,7 +1039,9 @@ const S = {
   tabLoadedFor: null,
   avail: { week: null, chosen: false, data: {}, forms: {}, success: null, loading: {}, error: '' },
   mgr: {
-    sub: ['week', 'oneoffs', 'hours'].indexOf(place.get('mgrSub')) >= 0 ? place.get('mgrSub') : 'week',
+    sub: ['overview', 'week', 'oneoffs', 'hours'].indexOf(place.get('mgrSub')) >= 0 ? place.get('mgrSub') : 'overview',
+    overview: null,
+    overviewErr: '',
     weekOf: null,
     boards: {},
     boardErr: '',
@@ -1513,9 +1558,41 @@ function wrongCode(reply) {
 function forgetCode() {
   S.code = '';
   store.del('code');
-  store.keys().filter((key) => /^(board|mhours)\./.test(key)).forEach((key) => store.del(key));
+  store.keys().filter((key) => /^(board|mhours)\./.test(key) || key === 'overview').forEach((key) => store.del(key));
+  S.mgr.overview = null;
   S.mgr.boards = {};
   S.mgr.hours = {};
+}
+/* Always this week. A copy from an earlier week is never shown. */
+function loadOverview(fresh) {
+  if (!S.code) return Promise.resolve();
+  const weekOf = S.view.week.thisWeek.weekOf;
+  if (S.mgr.overview && S.mgr.overview.weekOf !== weekOf) S.mgr.overview = null;
+  if (!S.mgr.overview) {
+    const cached = store.get('overview');
+    if (cached && cached.weekOf === weekOf) {
+      S.mgr.overview = cached;
+      render();
+    }
+  }
+  return readOnce('overview', fresh, async () => {
+    if (!S.code) return;
+    try {
+      const reply = await apiWrite('mgrOverview', { code: S.code });
+      if (wrongCode(reply)) {
+        S.errors.code = reply.error;
+      } else if (reply.ok === false) {
+        S.mgr.overviewErr = reply.error;
+      } else {
+        S.mgr.overview = reply;
+        S.mgr.overviewErr = '';
+        store.set('overview', reply);
+      }
+    } catch (err) {
+      if (!S.mgr.overview) S.mgr.overviewErr = OFFLINE_MESSAGE;
+    }
+    render();
+  });
 }
 function loadBoard(weekOf, fresh) {
   if (!S.code) return Promise.resolve();
@@ -1604,6 +1681,7 @@ function loadManage() {
   if (!view || !view.me.manager || !S.code) return;
   if (!S.mgr.weekOf) S.mgr.weekOf = startWeek(view);
   if (!S.mgr.month) S.mgr.month = view.now.date.slice(0, 7);
+  if (S.mgr.sub === 'overview') loadOverview();
   if (S.mgr.sub === 'week') loadBoard(S.mgr.weekOf);
   if (S.mgr.sub === 'oneoffs') loadBoard(oneOffFormState().weekOf);
   if (S.mgr.sub === 'hours') loadMgrHours(S.mgr.month);
@@ -2390,15 +2468,110 @@ function viewManage() {
   let body;
   if (sub === 'oneoffs') body = viewMgrOneOffs(view);
   else if (sub === 'hours') body = viewMgrHours(view);
-  else body = viewMgrWeek(view);
+  else if (sub === 'week') body = viewMgrWeek(view);
+  else body = viewMgrOverview(view);
   return html`
     <div class="mg-head">
       <h1 class="title">Manage</h1>
       <div class="seg mg-seg" role="group" aria-label="Manage section">
-        ${seg('week', 'Week')}${seg('oneoffs', 'One-offs')}${seg('hours', 'Hours')}
+        ${seg('overview', 'Overview')}${seg('week', 'Week')}${seg('oneoffs', 'One-offs')}${seg('hours', 'Hours')}
       </div>
     </div>
     <div data-key="mgr:${sub}">${body}</div>`;
+}
+
+/* overview */
+
+const ONE_OFF_STATES = { done: 'Done', open: 'Open', uncovered: 'Uncovered', missed: 'Missed', waiting: 'Not out yet' };
+function viewMgrOverview(view) {
+  const ov = S.mgr.overview;
+  if (!ov) {
+    return S.mgr.overviewErr
+      ? html`<div class="card empty"><p class="strong">${S.mgr.overviewErr}</p><button type="button" class="btn btn-line" style="margin-top:14px" data-act="mgr-retry">Try again</button></div>`
+      : viewLoading();
+  }
+  const who = (name) => firstNameOrFull(name, ov.staffNames);
+  // Hours rows can list people who are no longer active, so check against them too.
+  const listed = ov.staffNames.concat(ov.hours.people.map((person) => person.name));
+  const state = ov.published ? 'Out' : ov.held ? 'On hold' : ov.firstWeekLabel ? 'Starts ' + ov.firstWeekLabel : 'Not out yet';
+  const stat = (count, label, bad) => html`<div class="ov-stat${bad && count ? ' is-bad' : ''}"><b>${count}</b><span>${label}</span></div>`;
+  const num = (hours) => html`<td class="ov-num${Number(hours) ? '' : ' is-zero'}">${hoursNumber(hours)}</td>`;
+  const anyOnClock = ov.hours.people.some((person) => person.onClock);
+  return html`
+    <div class="ov">
+      <div class="ov-col">
+        <section class="card ov-card" aria-label="This week">
+          <div class="ov-head">
+            <div>
+              <p class="ov-kicker">This week</p>
+              <h2 class="h2">${ov.label}</h2>
+            </div>
+            <span class="chip${ov.published ? '' : ' chip-quiet'}">${state}</span>
+          </div>
+          <div class="ov-stats">
+            ${stat(ov.counts.done, 'Done')}${stat(ov.counts.open, 'Still open')}${stat(ov.counts.missed, 'Missed', true)}${stat(ov.counts.uncovered, 'Uncovered', true)}
+          </div>
+          <ul class="ov-days">
+            ${ov.days.map((day) => html`
+              <li class="ov-day${day.date === view.now.date ? ' is-today' : ''}" data-key="ovd:${day.date}">
+                <span class="ov-day-name">${day.label}</span>
+                ${day.closed && !day.total
+                  ? html`<span class="ov-day-closed">Closed</span>`
+                  : html`
+                    <span class="ov-bar" aria-hidden="true"><i style="width:${day.total ? Math.round((day.done / day.total) * 100) : 0}%"></i></span>
+                    <span class="ov-day-count">${(day.closed ? 'Closed · ' : '') + (day.total ? day.done + ' of ' + day.total : 'None')}</span>`}
+              </li>`)}
+          </ul>
+        </section>
+        <section class="card ov-card" aria-label="Hours logged">
+          <h2 class="h2">Hours logged</h2>
+          <table class="ov-table">
+            <thead><tr><th scope="col">Name</th><th scope="col" class="ov-num">This week</th><th scope="col" class="ov-num">Last week</th></tr></thead>
+            <tbody>
+              ${ov.hours.people.map((person) => html`
+                <tr data-key="ovh:${person.name}">
+                  <td class="ov-name">${person.onClock ? html`<span class="ov-dot" role="img" aria-label="On the clock now"></span>` : ''}${firstNameOrFull(person.name, listed)}</td>
+                  ${num(person.thisWeek)}${num(person.lastWeek)}
+                </tr>`)}
+            </tbody>
+            <tfoot><tr><td>Total</td><td class="ov-num">${hoursNumber(ov.hours.thisWeek)}</td><td class="ov-num">${hoursNumber(ov.hours.lastWeek)}</td></tr></tfoot>
+          </table>
+          <p class="ov-foot">${anyOnClock ? html`<span class="ov-dot"></span>On the clock now. ` : ''}Last week was ${ov.hours.lastLabel}. Someone on the clock counts once they clock out.</p>
+        </section>
+      </div>
+      <div class="ov-col">
+        <section class="card ov-card" aria-label="All tasks">
+          <div class="ov-title-row">
+            <h2 class="h2">All tasks</h2>
+            <span class="count">Done this week</span>
+          </div>
+          <ul class="ov-list">
+            ${ov.tasks.map((task) => html`
+              <li class="ov-item${task.active ? '' : ' is-off'}" data-key="ovt:${task.id}">
+                <div class="ov-item-text">
+                  <div class="ov-item-title">${task.title}${task.active ? '' : html`<span class="chip chip-quiet">Off</span>`}</div>
+                  <div class="ov-item-meta">${[task.cadence, 'Priority ' + task.priority, task.days, minutesText(task.minutes)].filter(Boolean).join(' · ')}</div>
+                </div>
+                <span class="ov-item-count">${task.scheduled ? task.done + ' of ' + task.scheduled : 'None'}</span>
+              </li>`)}
+          </ul>
+          <h3 class="h3 ov-sub">One-offs this week</h3>
+          ${ov.oneOffs.length
+            ? html`
+              <ul class="ov-list">
+                ${ov.oneOffs.map((item) => html`
+                  <li class="ov-item" data-key="ovo:${item.id}">
+                    <div class="ov-item-text">
+                      <div class="ov-item-title">${item.title}</div>
+                      <div class="ov-item-meta">${item.who ? who(item.who) : 'Nobody yet'}${item.dayLabel ? ' · ' + item.dayLabel : ''}</div>
+                    </div>
+                    <span class="chip${item.status === 'uncovered' || item.status === 'missed' ? ' chip-danger' : item.status === 'done' ? '' : ' chip-quiet'}">${ONE_OFF_STATES[item.status] || item.status}</span>
+                  </li>`)}
+              </ul>`
+            : html`<p class="empty-line ov-none">No one-offs this week.</p>`}
+        </section>
+      </div>
+    </div>`;
 }
 
 const UNCOVERED_SHOWN = 5;
@@ -3605,6 +3778,7 @@ const A = {
     render();
   },
   'mgr-retry'() {
+    S.mgr.overviewErr = '';
     S.mgr.boardErr = '';
     S.mgr.hoursErr = '';
     render();

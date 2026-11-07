@@ -159,6 +159,7 @@ function playWeek(gas, afterStep) {
     get({ action: 'names' });
     ['Gus', 'Ana', 'Ben', 'Cora', 'Dev', 'Max'].forEach((name) => get({ action: 'boot', name }));
     get({ action: 'availability', name: 'Ana', weekOf: '2026-11-23' });
+    get({ action: 'mgrOverview', code: CODE });
     get({ action: 'mgrBoard', code: CODE });
     get({ action: 'mgrHours', code: CODE });
   };
@@ -1238,6 +1239,7 @@ const READ_SCREENS = {
   boot: { action: 'boot', name: 'Ana' },
   'boot for a manager': { action: 'boot', name: 'Max' },
   availability: { action: 'availability', name: 'Ana', weekOf: '2026-11-23' },
+  mgrOverview: { action: 'mgrOverview', code: CODE },
   mgrBoard: { action: 'mgrBoard', code: CODE },
   mgrHours: { action: 'mgrHours', code: CODE },
 };

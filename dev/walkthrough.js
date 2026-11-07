@@ -279,6 +279,45 @@ async function boot(name) {
 async function setTime(iso) {
   await fetch(`${SITE}/dev/time?set=${encodeURIComponent(iso)}`);
 }
+/* Managers land on Overview. The Week board is one tap over. */
+const OVERVIEW = 'Hours logged';
+async function toWeek(page) {
+  await page.click('.seg button', { text: 'Week' });
+  await page.waitText('On the clock now');
+}
+/* What the Overview should show, checked against the server's own answer. */
+async function checkOverview(page, where) {
+  const reply = await api({ action: 'mgrOverview', code: CODE });
+  const seen = await page.eval(`(() => {
+    const text = document.querySelector('.ov').innerText;
+    return {
+      pressed: document.querySelector('.mg-seg button[aria-pressed=true]').innerText,
+      label: document.querySelector('.ov-head .h2').innerText,
+      stats: Array.from(document.querySelectorAll('.ov-stat b')).map((el) => Number(el.innerText)),
+      days: document.querySelectorAll('.ov-day').length,
+      hourRows: document.querySelectorAll('.ov-table tbody tr').length,
+      hourNames: Array.from(document.querySelectorAll('.ov-table tbody .ov-name')).map((el) => el.innerText.trim()),
+      dayCounts: Array.from(document.querySelectorAll('.ov-day')).map((el) => (el.querySelector('.ov-day-count') || {}).innerText || ''),
+      dots: document.querySelectorAll('.ov-table .ov-dot').length,
+      tasks: document.querySelectorAll('.ov-item[data-key^="ovt:"]').length,
+      oneOffs: document.querySelectorAll('.ov-item[data-key^="ovo:"]').length,
+      totals: Array.from(document.querySelectorAll('.ov-table tfoot td')).map((el) => el.innerText),
+      times: /\d:\d\d|\b(AM|PM)\b/.test(text),
+    };
+  })()`);
+  check(seen.pressed === 'Overview', `${where}: Overview is the part showing (${seen.pressed})`);
+  check(seen.label === reply.label, `${where}: this week's label (${seen.label})`);
+  check(JSON.stringify(seen.stats) === JSON.stringify([reply.counts.done, reply.counts.open, reply.counts.missed, reply.counts.uncovered]), `${where}: the four counts match the server (${seen.stats})`);
+  check(seen.days === 7, `${where}: one line per day`);
+  check(reply.days.every((day, i) => !day.total || seen.dayCounts[i].includes(day.done + ' of ' + day.total)), `${where}: every day with tasks shows its count, closed or not (${seen.dayCounts})`);
+  check(new Set(seen.hourNames).size === seen.hourNames.length, `${where}: no two hours rows read the same (${seen.hourNames})`);
+  check(seen.hourRows === reply.hours.people.length, `${where}: one hours row per person (${seen.hourRows})`);
+  check(seen.dots === reply.hours.people.filter((one) => one.onClock).length, `${where}: a dot for each person on the clock (${seen.dots})`);
+  check(seen.totals[1] === String(reply.hours.thisWeek) && seen.totals[2] === String(reply.hours.lastWeek), `${where}: the totals match (${seen.totals})`);
+  check(seen.tasks === reply.tasks.length, `${where}: every regular task is listed (${seen.tasks})`);
+  check(seen.oneOffs === reply.oneOffs.length, `${where}: every one-off this week is listed (${seen.oneOffs})`);
+  check(!seen.times, `${where}: no times of day`);
+}
 
 /* ------------------------------------------------------------------------ scenes ---- */
 
@@ -316,11 +355,11 @@ const SCENES = {
     await page.eval(`document.querySelector('.signin input').select()`);
     await page.send('Input.insertText', { text: CODE });
     await page.click('.signin button[type=submit]');
-    await page.waitText('On the clock now');
+    await page.waitText(OVERVIEW);
     check(await page.eval(`document.querySelector('.tab[aria-current=page]').innerText.includes('Manage')`), 'managers land on Manage');
     check(buttons.length === 10, 'still 10 people');
     await page.goto('/');
-    await page.waitText('On the clock now');
+    await page.waitText(OVERVIEW);
     check(!(await page.hasText('Manager code')), 'the code is only asked for once on a device');
 
     // Links.
@@ -720,8 +759,17 @@ const SCENES = {
     await page.click('.person[data-name="Max"]');
     await page.waitFor('.signin input');
     await page.type('.signin input', CODE);
+    await api({ action: 'clockIn', name: 'Ben' });
     await page.click('.signin button[type=submit]');
-    await page.waitText('On the clock now');
+    await page.waitText(OVERVIEW);
+    await page.waitFor('.ov-dot');
+    await page.shot('phone-manage-overview');
+    await page.shot('phone-manage-overview-full', { full: true });
+    await page.noSideScroll('manage overview');
+    await checkOverview(page, 'phone overview');
+    check(await page.hasText('Replace the lobby light bulbs'), "this week's one-offs show");
+    check(await page.eval(`!!document.querySelector('.ov-stat.is-bad')`), 'uncovered work stands out');
+    await toWeek(page);
     await page.shot('phone-manage-week');
     await page.shot('phone-manage-week-full', { full: true });
     await page.noSideScroll('manage week');
@@ -761,9 +809,10 @@ const SCENES = {
     await page.waitFor('.signin input');
     await page.type('.signin input', CODE);
     await page.click('.signin button[type=submit]');
-    await page.waitText('On the clock now');
+    await page.waitText(OVERVIEW);
     await api({ action: 'mgrBoard', code: CODE });
     await page.goto('/');
+    await toWeek(page);
     await page.waitText('Next deadline');
     await page.click('[data-act=mgr-rebuild]');
     await page.waitText('Re-run matching?');
@@ -909,7 +958,28 @@ const SCENES = {
     await page.waitFor('.signin input');
     await page.type('.signin input', CODE);
     await page.click('.signin button[type=submit]');
-    await page.waitText('On the clock now');
+    await page.waitText(OVERVIEW);
+    await page.shot('desktop-manage-overview');
+    await page.shot('desktop-manage-overview-full', { full: true });
+    await page.noSideScroll('desktop manage overview');
+    await checkOverview(page, 'desktop overview');
+    check(await page.eval(`(() => { const cols = document.querySelectorAll('.ov-col'); return cols.length === 2 && cols[1].getBoundingClientRect().left > cols[0].getBoundingClientRect().right; })()`), 'desktop overview sits in two columns');
+    // A day closed after the build still shows its tasks, and an inactive person's first name doesn't clash.
+    check(await page.eval(`(() => {
+      const real = S.mgr.overview;
+      const ov = JSON.parse(JSON.stringify(real));
+      ov.days[3] = Object.assign(ov.days[3], { closed: 'Snow', total: 7, done: 2 });
+      ov.staffNames = ['Ana Ruiz'];
+      ov.hours.people = [{ name: 'Ana Ruiz', thisWeek: 1, lastWeek: 0 }, { name: 'Ana Lee', thisWeek: 0, lastWeek: 2 }];
+      S.mgr.overview = ov;
+      render();
+      const day = document.querySelectorAll('.ov-day')[3].innerText;
+      const names = Array.from(document.querySelectorAll('.ov-table tbody .ov-name')).map((el) => el.innerText.trim());
+      S.mgr.overview = real;
+      render();
+      return day.includes('Closed') && day.includes('2 of 7') && names.join() === 'Ana Ruiz,Ana Lee';
+    })()`), 'a closed day with tasks keeps its count, and hours names never read the same');
+    await toWeek(page);
     await page.shot('desktop-manage-week');
     await page.shot('desktop-manage-week-full', { full: true });
     await page.noSideScroll('desktop manage week');
@@ -1017,7 +1087,11 @@ const SCENES = {
     await page.shot('narrow-manager-code');
     await page.type('.signin input', CODE);
     await page.click('.signin button[type=submit]');
-    await page.waitText('On the clock now');
+    await page.waitText(OVERVIEW);
+    await page.shot('narrow-manage-overview');
+    await page.noSideScroll('320 manage overview');
+    check(await page.eval(`Array.from(document.querySelectorAll('.mg-seg button')).every((el) => el.scrollWidth <= el.clientWidth + 1)`), '320 wide: the four Manage labels fit');
+    await toWeek(page);
     await page.shot('narrow-manage-week');
     await page.noSideScroll('320 manage week');
     check(await page.eval(`(() => { const labels = Array.from(document.querySelectorAll('.tab')); return labels.every((el) => el.scrollWidth <= el.clientWidth + 1); })()`), '320 wide: the five tab labels fit');
@@ -1063,7 +1137,12 @@ const SCENES = {
     await page.waitFor('.signin input');
     await page.type('.signin input', CODE);
     await page.click('.signin button[type=submit]');
-    await page.waitText('On the clock now');
+    await page.waitText(OVERVIEW);
+    await page.waitText('XXXX');
+    await page.shot('stress-manage-overview');
+    await page.noSideScroll('320, long text, manage overview');
+    check(!(await page.eval(`!!document.querySelector('.ov img, .ov script')`)), 'markup in a one-off never becomes an element on the Overview');
+    await toWeek(page);
     await page.waitText('XXXX');
     await page.shot('stress-manage-week');
     await page.noSideScroll('320, long text, manage week');
@@ -1137,7 +1216,7 @@ const SCENES = {
     await page.waitFor('.signin input');
     await page.type('.signin input', CODE);
     await page.click('.signin button[type=submit]');
-    await page.waitText('On the clock now');
+    await page.waitText(OVERVIEW);
     await page.click('.top-me');
     await page.waitText('Forget the manager code on this device');
     await page.click('.sheet [data-act=forget-code]');
@@ -1187,10 +1266,10 @@ const SCENES = {
     await page.clearSite();
     await page.eval(`localStorage.setItem('koda-ops.v1.code', '"${CODE}"')`);
     await page.goto('/?me=Max');
-    await page.waitText('On the clock now');
+    await page.waitText(OVERVIEW);
     await settle('opening Manage', 2);
     await page.goto('/');
-    await page.waitText('On the clock now');
+    await page.waitText(OVERVIEW);
     await settle('reloading Manage', 2);
   },
 
@@ -1201,7 +1280,7 @@ const SCENES = {
     await page.waitText('hours in November');
     await page.eval(`localStorage.setItem('koda-ops.v1.code', '"${CODE}"')`);
     await page.goto('/?me=Max');
-    await page.waitText('On the clock now');
+    await page.waitText(OVERVIEW);
     check(true, "a link for someone else lands on their first tab, not the last person's");
 
     await page.clearSite();
@@ -1298,7 +1377,8 @@ const SCENES = {
     await page.fresh('/', '?nextWeek=0');
     await page.eval(`localStorage.setItem('koda-ops.v1.code', '"${CODE}"')`);
     await page.goto('/?me=Max');
-    await page.waitText('On the clock now');
+    await page.waitText(OVERVIEW);
+    await toWeek(page);
     await page.click('.wk-arrow:not(.back)');
     await page.waitText('Not out yet');
     await page.waitText('For the week of Nov 16 - 22.');
@@ -1383,6 +1463,8 @@ const SCENES = {
     await page.clearSite();
     await page.eval(`localStorage.setItem('koda-ops.v1.code', '"${CODE}"')`);
     await page.goto('/?me=Max');
+    await page.waitText(OVERVIEW);
+    await toWeek(page);
     await page.waitFor('[data-act=unc-all]');
     check((await page.eval(`document.querySelectorAll('.unc-row').length`)) === 5, 'a long uncovered list starts with five');
     check(await page.eval(`document.querySelector('[data-act=unc-all]').innerText.startsWith('Show ')`), 'and says how many more there are');
@@ -1576,7 +1658,9 @@ const SCENES = {
     await page.clearSite();
     await page.eval(`localStorage.setItem('koda-ops.v1.code', '"${CODE}"')`);
     await page.goto('/?me=Max&tab=manage');
-    await page.waitText('On the clock now');
+    await page.waitText(OVERVIEW);
+    check(await page.hasText('Starts Nov 9'), 'before the first week, the Overview says when the site starts');
+    await toWeek(page);
     check(await page.eval(`document.querySelector('.wk-switch h2').innerText === 'Nov 9 - 15'`), 'before the first week, Manage opens on the first week');
     await page.click('.seg button', { text: 'One-offs' });
     await page.waitFor('.oo-form');
@@ -1731,7 +1815,7 @@ const SCENES = {
     await page.clearSite();
     await page.eval(`localStorage.setItem('koda-ops.v1.code', '"${CODE}"')`);
     await page.goto('/?me=Max&tab=manage');
-    await page.waitText('On the clock now');
+    await page.waitText(OVERVIEW);
     await page.click('.seg button', { text: 'Hours' });
     await page.waitText("1 entry ran much longer than that day's tasks.");
     check(!(await page.hasText('shift')), 'Manage Hours has no shift wording');

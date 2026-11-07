@@ -2100,7 +2100,7 @@ test('monthly: says nothing about a month from before the first week', () => {
 test('every manager action needs the code', () => {
   const gas = built();
   gas.setNow(at(MON, '10:00'));
-  const reads = ['mgrCheck', 'mgrBoard', 'mgrHours'];
+  const reads = ['mgrCheck', 'mgrOverview', 'mgrBoard', 'mgrHours'];
   const writes = ['mgrOneOffAdd', 'mgrOneOffEdit', 'mgrOneOffDelete', 'mgrAssign', 'mgrRebuild', 'mgrRemind', 'mgrHoursAdd', 'mgrHoursEdit', 'mgrHoursDelete'];
   const snapshot = JSON.stringify([gas.rows('Schedule'), gas.rows('One-Offs'), gas.rows('Hours')]);
   reads.forEach((action) => refused(gas.get({ action, code: 'wrong' }), /manager code/));
@@ -2228,6 +2228,133 @@ test('mgrHours: per person totals, issues, months, and it matches the sheet\'s r
   assert.strictEqual(october.people.find((person) => person.name === 'Ana').total, 0.66, '0.33 and 0.33: the same sum the sheet adds up');
   assert.strictEqual(ok(gas.get({ action: 'mgrHours', code: CODE })).month, '2026-11', 'this month by default');
   refused(gas.get({ action: 'mgrHours', code: CODE, month: 'November' }), /pick a month/);
+});
+
+test('mgrOverview: this week in one reply, with the documented shape and the right counts', () => {
+  const gas = built(['Ana', 'Ben', 'Dev']); // Cora hasn't submitted, so Saturday is uncovered
+  gas.setNow(at(MON, '10:00'));
+  ok(gas.post({ action: 'taskToggle', name: 'Ana', id: `task|T01|${MON}`, done: true }));
+  ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Listed here', weekOf: MON, minutes: 15, by: 'Max' }));
+  const gone = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Deleted one', weekOf: MON, minutes: 15, by: 'Max' }));
+  ok(gas.post({ action: 'mgrOneOffDelete', code: CODE, id: gone.id }));
+  ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Next week one', weekOf: NEXT_MON, minutes: 15, by: 'Max' }));
+  const t06 = gas.rows('Tasks').find((row) => row.ID === 'T06');
+  gas.sheet('Tasks').getRange(t06._row, 9).setValue(false);
+  gas.sheet('Closed Days').appendRow([SUN, 'Meet day']);
+
+  const ov = ok(gas.get({ action: 'mgrOverview', code: CODE }));
+  deepKeys(ov, ['ok', 'weekOf', 'label', 'published', 'counts', 'days', 'hours', 'tasks', 'oneOffs', 'staffNames'], 'mgrOverview');
+  assert.deepStrictEqual([ov.weekOf, ov.label, ov.published], [MON, 'Nov 9 - 15', true]);
+
+  const rows = scheduleRows(gas).filter((row) => row.Date >= MON && row.Date <= SUN);
+  const expected = { done: 0, open: 0, missed: 0, uncovered: 0 };
+  rows.forEach((row) => {
+    if (row.Status === 'done') expected.done += 1;
+    else if (row.Status === 'missed') expected.missed += 1;
+    else if (row.Name) expected.open += 1;
+    else expected.uncovered += 1;
+  });
+  assert.deepStrictEqual(ov.counts, expected);
+  assert.strictEqual(ov.counts.done, 1);
+  assert.ok(ov.counts.uncovered > 0, 'nobody offered Saturday');
+
+  assert.strictEqual(ov.days.length, 7);
+  ov.days.forEach((day) => deepKeys(day, ['date', 'label', 'done', 'total', 'closed'], day.date));
+  assert.deepStrictEqual([ov.days[0].label, ov.days[0].done], ['Mon, Nov 9', 1]);
+  assert.strictEqual(ov.days.reduce((sum, day) => sum + day.total, 0), rows.length);
+  assert.strictEqual(ov.days[6].closed, 'Meet day');
+
+  assert.strictEqual(ov.tasks.length, gas.rows('Tasks').length, 'every row of the Tasks tab');
+  ov.tasks.forEach((task) => deepKeys(task, ['id', 'title', 'cadence', 'priority', 'days', 'minutes', 'active', 'done', 'scheduled'], task.id));
+  const task = (id) => ov.tasks.find((line) => line.id === id);
+  assert.deepStrictEqual([task('T01').days, task('T01').cadence, task('T01').minutes, task('T01').done, task('T01').scheduled], ['Mon-Sat', 'Daily', 15, 1, 6]);
+  assert.strictEqual(task('T08').days, 'Set');
+  assert.strictEqual(task('T03').days, 'Mon, Wed, Fri');
+  assert.strictEqual(task('T06').active, false, 'a task turned off still shows, marked off');
+  assert.strictEqual(task('T01').active, true);
+  ov.tasks.forEach((line) => {
+    const theirs = rows.filter((row) => row['Task ID'] === line.id && !row['One-Off ID']);
+    assert.deepStrictEqual([line.scheduled, line.done], [theirs.length, theirs.filter((row) => row.Status === 'done').length], line.id);
+  });
+
+  assert.deepStrictEqual(ov.oneOffs.map((item) => item.title), ['Listed here'], "only this week's, and not deleted ones");
+  deepKeys(ov.oneOffs[0], ['id', 'title', 'who', 'dayLabel', 'status'], 'overview one-off');
+  const carrier = rows.find((row) => row['One-Off ID'] === ov.oneOffs[0].id);
+  assert.strictEqual(ov.oneOffs[0].who, carrier.Name);
+  assert.strictEqual(ov.oneOffs[0].status, carrier.Name ? 'open' : 'uncovered');
+  assert.deepStrictEqual(ov.staffNames, ['Gus', 'Hal', 'Ivy', 'Jo', 'Ana', 'Ben', 'Cora', 'Dev', 'Max', 'Mia']);
+  assert.ok(!/@/.test(JSON.stringify(ov)), 'no email addresses');
+  assert.ok(!/\d:\d\d/.test(JSON.stringify(ov)), 'no times of day');
+});
+
+test('mgrOverview: hours this week and last go by the entry date, and an open entry counts as nothing', () => {
+  const gas = built();
+  gas.setNow(at('2026-11-08', '21:00'));
+  ok(gas.post({ action: 'clockIn', name: 'Ana' }));
+  gas.setNow(at(MON, '01:00'));
+  ok(gas.post({ action: 'clockOut', name: 'Ana' })); // Sunday night into Monday: dated Sunday, so last week
+  gas.setNow(at(MON, '15:00'));
+  ok(gas.post({ action: 'hoursAdd', name: 'Ben', date: '2026-11-01', start: '09:00', end: '10:00' })); // the week before last
+  ok(gas.post({ action: 'hoursAdd', name: 'Ben', date: '2026-11-02', start: '09:00', end: '11:00' }));
+  ok(gas.post({ action: 'hoursAdd', name: 'Ben', date: MON, start: '13:00', end: '14:30' }));
+  ok(gas.post({ action: 'hoursAdd', name: 'Max', date: '2026-11-03', start: '09:00', end: '10:00' }));
+  gas.setNow(at(TUE, '09:00'));
+  ok(gas.post({ action: 'clockIn', name: 'Cora' }));
+  gas.setNow(at(TUE, '11:00'));
+
+  const hours = ok(gas.get({ action: 'mgrOverview', code: CODE })).hours;
+  deepKeys(hours, ['lastLabel', 'thisWeek', 'lastWeek', 'people'], 'overview hours');
+  assert.strictEqual(hours.lastLabel, 'Nov 2 - 8');
+  const person = (name) => hours.people.find((line) => line.name === name);
+  hours.people.forEach((line) => deepKeys(line, ['name', 'thisWeek', 'lastWeek', 'onClock'], line.name));
+  assert.deepStrictEqual(person('Ana'), { name: 'Ana', thisWeek: 0, lastWeek: 4, onClock: false });
+  assert.deepStrictEqual(person('Ben'), { name: 'Ben', thisWeek: 1.5, lastWeek: 2, onClock: false });
+  assert.deepStrictEqual(person('Cora'), { name: 'Cora', thisWeek: 0, lastWeek: 0, onClock: true }, 'on the clock, and nothing counted yet');
+  assert.deepStrictEqual(person('Max'), { name: 'Max', thisWeek: 0, lastWeek: 1, onClock: false }, 'a manager with entries shows up');
+  assert.ok(!person('Mia'), 'a manager with none does not');
+  assert.ok(person('Gus') && person('Dev'), 'everyone else shows up, even at zero');
+  assert.deepStrictEqual([hours.thisWeek, hours.lastWeek], [1.5, 7]);
+
+  const month = ok(gas.get({ action: 'mgrHours', code: CODE, month: '2026-11' }));
+  assert.strictEqual(month.people.find((line) => line.name === 'Ana').total, person('Ana').thisWeek + person('Ana').lastWeek, 'counted the same way as Manage > Hours');
+});
+
+test('mgrOverview: a week on hold, a week not built yet, and a week before the site starts', () => {
+  const early = world();
+  ok(early.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Waits for Friday', weekOf: MON, minutes: 15, by: 'Max' }));
+  const before = ok(early.get({ action: 'mgrOverview', code: CODE }));
+  assert.deepStrictEqual([before.weekOf, before.published, before.firstWeekLabel, 'held' in before], ['2026-11-02', false, 'Nov 9', false]);
+
+  early.setNow(at(MON, '10:00')); // the Friday run never happened
+  const unbuilt = ok(early.get({ action: 'mgrOverview', code: CODE }));
+  assert.deepStrictEqual([unbuilt.weekOf, unbuilt.published, 'held' in unbuilt, 'firstWeekLabel' in unbuilt], [MON, false, false, false]);
+  assert.deepStrictEqual(unbuilt.counts, { done: 0, open: 0, missed: 0, uncovered: 0 });
+  assert.ok(unbuilt.tasks.every((line) => line.scheduled === 0 && line.done === 0));
+  assert.deepStrictEqual(unbuilt.oneOffs.map((item) => [item.title, item.who, item.status]), [['Waits for Friday', '', 'waiting']]);
+
+  const gas = fridayWorld();
+  ok(gas.post({ action: 'mgrHoldWeek', code: CODE, weekOf: MON }));
+  gas.setNow(at(MON, '10:00'));
+  const held = ok(gas.get({ action: 'mgrOverview', code: CODE }));
+  assert.deepStrictEqual([held.held, held.published], [true, false]);
+  assert.strictEqual(held.days.reduce((sum, day) => sum + day.total, 0), 0);
+  ok(gas.post({ action: 'mgrRunHeldWeek', code: CODE, by: 'Max' }));
+  const run = ok(gas.get({ action: 'mgrOverview', code: CODE }));
+  assert.deepStrictEqual([run.published, 'held' in run], [true, false]);
+  assert.ok(run.days.reduce((sum, day) => sum + day.total, 0) > 0);
+});
+
+test('mgrOverview: needs the right code, and changes nothing', () => {
+  const gas = built();
+  gas.setNow(at(MON, '10:00'));
+  const everything = () => JSON.stringify(['Staff', 'Tasks', 'One-Offs', 'Schedule', 'Hours', 'Log'].map((tab) => gas.rows(tab)));
+  const snapshot = everything();
+  refused(gas.get({ action: 'mgrOverview', code: 'wrong' }), /manager code isn't right/);
+  refused(gas.get({ action: 'mgrOverview' }), /manager code/);
+  refused(gas.get({ action: 'mgrOverview', name: 'Ana' }), /manager code/);
+  ok(gas.get({ action: 'mgrOverview', code: CODE }));
+  ok(gas.post({ action: 'mgrOverview', code: CODE }));
+  assert.strictEqual(everything(), snapshot);
 });
 
 /* ------------------------------------------------------------------- boot shape ---- */

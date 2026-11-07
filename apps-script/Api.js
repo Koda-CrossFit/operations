@@ -68,6 +68,7 @@ function actionTable_() {
     extraRemove: { run: apiExtraRemove_, write: true },
 
     mgrCheck: { run: apiMgrCheck_, manager: true },
+    mgrOverview: { run: apiMgrOverview_, manager: true },
     mgrBoard: { run: apiMgrBoard_, manager: true },
     mgrHours: { run: apiMgrHours_, manager: true },
     mgrOneOffAdd: { run: apiMgrOneOffAdd_, manager: true, write: true },
@@ -1410,6 +1411,128 @@ function apiMgrBoard_(req) {
       return person.name;
     }),
   });
+}
+
+/* ------------------------------------------------------------ managers: overview ---- */
+
+/** 'Set', 'Mon-Sat', or the days listed. */
+function taskDaysText_(task) {
+  if (task.setOnly) return 'Set';
+  if (task.days.join() === DAY_KEYS_.slice(0, 6).join()) return 'Mon-Sat';
+  if (task.days.length === 7) return 'Every day';
+  return task.days.join(', ');
+}
+
+/** Where a one-off stands: done, open (someone has it), uncovered, missed, or waiting for its week to go out. */
+function oneOffState_(item, row) {
+  if (item.status === 'done' || (row && row.status === 'done')) return 'done';
+  if (!row) return 'waiting';
+  if (row.status === 'missed') return 'missed';
+  return row.name ? 'open' : 'uncovered';
+}
+
+/** One screen for the managers: this week's tasks, hours this week and last, and every regular task. Always the current Monday to Sunday. */
+function apiMgrOverview_() {
+  var info = nowInfo_();
+  var weekOf = info.monday;
+  var end = addDays_(weekOf, 6);
+  var lastWeekOf = addDays_(weekOf, -7);
+  var weekRows = scheduleForWeek_(weekOf);
+  var isDone = function (row) {
+    return row.status === 'done';
+  };
+
+  var counts = { done: 0, open: 0, missed: 0, uncovered: 0 };
+  weekRows.forEach(function (row) {
+    if (row.status === 'done') counts.done += 1;
+    else if (row.status === 'missed') counts.missed += 1;
+    else if (row.name) counts.open += 1;
+    else counts.uncovered += 1;
+  });
+
+  // Hours go by the entry's date, the same as Manage > Hours and payroll. An open entry adds nothing until it closes.
+  var all = hoursRows_();
+  var between = function (from, to) {
+    return function (entry) {
+      return entry.date >= from && entry.date <= to;
+    };
+  };
+  var thisOnes = all.filter(between(weekOf, end));
+  var lastOnes = all.filter(between(lastWeekOf, addDays_(weekOf, -1)));
+  var either = thisOnes.concat(lastOnes);
+  var names = staff_()
+    .filter(function (person) {
+      return (person.active && person.type !== 'Manager') || either.some(function (entry) {
+        return entry.name === person.name;
+      });
+    })
+    .map(function (person) {
+      return person.name;
+    });
+  either.forEach(function (entry) {
+    if (names.indexOf(entry.name) < 0) names.push(entry.name);
+  });
+  var onClock = all
+    .filter(function (entry) {
+      return entryRunning_(entry, info.now);
+    })
+    .map(function (entry) {
+      return entry.name;
+    });
+
+  var first = firstWeek_();
+  var view = {
+    weekOf: weekOf,
+    label: weekLabel_(weekOf),
+    published: isPublished_(weekOf),
+    counts: counts,
+    days: weekDates_(weekOf).map(function (date) {
+      var rows = weekRows.filter(function (row) {
+        return row.date === date;
+      });
+      return { date: date, label: dayLabel_(date), done: rows.filter(isDone).length, total: rows.length, closed: closedNote_(date) };
+    }),
+    hours: {
+      lastLabel: weekLabel_(lastWeekOf),
+      thisWeek: totalHours_(thisOnes),
+      lastWeek: totalHours_(lastOnes),
+      people: names.map(function (name) {
+        var theirs = function (entry) {
+          return entry.name === name;
+        };
+        return { name: name, thisWeek: totalHours_(thisOnes.filter(theirs)), lastWeek: totalHours_(lastOnes.filter(theirs)), onClock: onClock.indexOf(name) >= 0 };
+      }),
+    },
+    tasks: tasks_().map(function (task) {
+      var rows = weekRows.filter(function (row) {
+        return row.taskId === task.id && !row.oneOffId;
+      });
+      return {
+        id: task.id,
+        title: task.title,
+        cadence: task.cadence,
+        priority: task.priority,
+        days: taskDaysText_(task),
+        minutes: task.minutes,
+        active: task.active,
+        done: rows.filter(isDone).length,
+        scheduled: rows.length,
+      };
+    }),
+    oneOffs: oneOffs_()
+      .filter(function (item) {
+        return item.weekOf === weekOf && item.status !== 'deleted';
+      })
+      .map(function (item) {
+        var row = rowOfOneOff_(item.id);
+        return { id: item.id, title: item.title, who: row ? row.name : '', dayLabel: row ? dayLabel_(row.date) : '', status: oneOffState_(item, row) };
+      }),
+    staffNames: activeStaff_().map(function (person) {
+      return person.name;
+    }),
+  };
+  if (first && first > weekOf) view.firstWeekLabel = monthDay_(first);
+  return withHeld_(weekOf, view);
 }
 
 /* ------------------------------------------------------------ managers: one-offs ---- */
