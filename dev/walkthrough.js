@@ -285,6 +285,31 @@ async function toWeek(page) {
   await page.click('.seg button', { text: 'Week' });
   await page.waitText('On the clock now');
 }
+/* Week view against the server's own board: a chip per person per day, one color per person, and a dropdown each. */
+async function checkWeekView(page, where) {
+  const board = await api({ action: 'mgrBoard', code: CODE, weekOf: await page.eval('S.mgr.weekOf || startWeek(S.view)') });
+  const seen = await page.eval(`(() => ({
+    pressed: document.querySelector('.wv-seg button[aria-pressed=true]').innerText,
+    days: document.querySelectorAll('.wv-day').length,
+    chips: Array.from(document.querySelectorAll('.wv-chip')).map((el) => el.dataset.name + '|' + el.closest('.wv-day').dataset.key),
+    colors: Array.from(document.querySelectorAll('.wv-chip, .wp')).map((el) => [(el.dataset.name || el.dataset.key.slice(3)), getComputedStyle(el).getPropertyValue('--pc').trim()]),
+    people: Array.from(document.querySelectorAll('.wp')).map((el) => el.dataset.key.slice(3)),
+  }))()`);
+  const chips = [];
+  board.days.forEach((day) => day.groups.forEach((group) => chips.push(group.name + '|wv:' + day.date)));
+  const names = board.people.map((person) => person.name);
+  board.days.forEach((day) => day.groups.forEach((group) => { if (names.indexOf(group.name) < 0) names.push(group.name); }));
+  board.days.forEach((day) => (day.extras || []).forEach((item) => { if (names.indexOf(item.name) < 0) names.push(item.name); }));
+  const colorOf = {};
+  const steady = seen.colors.every(([name, color]) => color && (colorOf[name] = colorOf[name] || color) === color);
+  const distinct = new Set(Object.values(colorOf)).size === Object.keys(colorOf).length;
+  check(seen.pressed === 'Week view', `${where}: Week view is the one showing (${seen.pressed})`);
+  check(seen.days === 7, `${where}: seven days across`);
+  check(JSON.stringify(seen.chips) === JSON.stringify(chips), `${where}: a chip for everyone working each day, matching the server (${seen.chips.length} of ${chips.length})`);
+  check(JSON.stringify(seen.people) === JSON.stringify(names), `${where}: a dropdown for each person (${seen.people})`);
+  check(steady, `${where}: each person keeps one color everywhere`);
+  check(distinct, `${where}: no two people share a color`);
+}
 /* What the Overview should show, checked against the server's own answer. */
 async function checkOverview(page, where) {
   const reply = await api({ action: 'mgrOverview', code: CODE });
@@ -785,6 +810,26 @@ const SCENES = {
     await page.gone('Uncovered');
     await sleep(200);
 
+    // Week view: who works each day, color coded, and each person's week in a dropdown.
+    await checkWeekView(page, 'phone week view');
+    check(!(await page.eval(`!!document.querySelector('.wp-body')`)), 'every dropdown starts closed');
+    const chipName = await page.eval(`document.querySelector('.wv-chip[data-name="Ana"]').dataset.name`);
+    await page.click('.wv-chip[data-name="Ana"]');
+    await page.waitFor('.wp-body');
+    await sleep(700); // it scrolls the person into view
+    check(await page.eval(`document.querySelector('.wp-body').closest('.wp').dataset.key === 'wp:${chipName}'`), 'tapping a name in the week opens that person');
+    await sleep(600);
+    check(await page.eval(`(() => { const box = document.querySelector('.wp-body').closest('.wp').getBoundingClientRect(); return box.top >= 56 && box.top < innerHeight / 2; })()`), 'and brings them into view');
+    check(await page.eval(`document.querySelectorAll('.wp-body .wp-dayname').length === new Set(Array.from(document.querySelectorAll('.wv-chip[data-name="Ana"]')).map((el) => el.closest('.wv-day').dataset.key)).size`), 'their dropdown has a heading for each day they work');
+    await page.shot('phone-manage-week-person');
+    await page.noSideScroll('week view, a person open');
+    await page.click('.wp-head[aria-expanded=true]');
+    await sleep(150);
+    check(!(await page.eval(`!!document.querySelector('.wp-body')`)), 'tapping the name again closes it');
+    await page.click('.wv-chip[data-name="Ana"]');
+    await page.waitFor('.wp-body');
+    await sleep(700); // it scrolls the person into view
+
     // Move a row.
     await page.click('[data-act=move]');
     await page.waitText('Move task');
@@ -795,6 +840,40 @@ const SCENES = {
     await page.click('.sheet button[type=submit]');
     await page.waitText('Moved to Ben.');
     await sleep(200);
+    await checkWeekView(page, 'phone week view after a move');
+
+    // Daily view: one day at a time, starting on today, with everyone's tasks open.
+    await page.click('.wv-seg button', { text: 'Daily view' });
+    await page.waitFor('.dv-days');
+    const daily = await page.eval(`(() => ({
+      buttons: document.querySelectorAll('.dv-day').length,
+      today: document.querySelector('.dv-day[aria-pressed=true]').classList.contains('is-today'),
+      cards: document.querySelectorAll('[data-key^="d:"]').length,
+      groups: document.querySelectorAll('.mgroup').length,
+      open: document.querySelectorAll('.mgroup-head[aria-expanded=true]').length,
+      grid: !!document.querySelector('.wv-grid'),
+    }))()`);
+    check(daily.buttons === 7 && daily.cards === 1, `Daily view shows one day, with a button for each (${daily.buttons}, ${daily.cards})`);
+    check(daily.today, 'Daily view starts on today');
+    check(daily.groups > 0 && daily.open === daily.groups, `everyone working that day starts open (${daily.open} of ${daily.groups})`);
+    check(!daily.grid, 'and the week grid is gone');
+    await page.shot('phone-manage-daily');
+    await page.shot('phone-manage-daily-full', { full: true });
+    await page.noSideScroll('daily view');
+    await page.click('.dv-day[data-date="2026-11-13"]');
+    await page.waitFor('[data-key="d:2026-11-13"]');
+    check(await page.eval(`document.querySelector('.dv-day[aria-pressed=true]').dataset.date === '2026-11-13'`), 'picking Friday shows Friday');
+    await page.goto('/');
+    await page.waitFor('.dv-days');
+    check(await page.eval(`document.querySelector('.wv-seg button[aria-pressed=true]').innerText === 'Daily view' && !document.querySelector('.wv-grid')`), 'Daily view stays picked after a reload');
+    await page.click('.wv-seg button', { text: 'Week view' });
+    await page.waitFor('.wv-grid');
+    await page.click('.wv-dayhead[data-date="2026-11-12"]');
+    await page.waitFor('[data-key="d:2026-11-12"]');
+    await sleep(700); // it scrolls up to the day buttons
+    check(await page.eval(`S.mgr.weekMode === 'day' && document.querySelector('.dv-day[aria-pressed=true]').dataset.date === '2026-11-12'`), 'tapping a day in the week opens it in Daily view');
+    await page.click('.wv-seg button', { text: 'Week view' });
+    await page.waitFor('.wv-grid');
 
     // Week switcher.
     await page.click('.wk-arrow:not(.back)');
@@ -983,6 +1062,36 @@ const SCENES = {
     await page.shot('desktop-manage-week');
     await page.shot('desktop-manage-week-full', { full: true });
     await page.noSideScroll('desktop manage week');
+    await checkWeekView(page, 'desktop week view');
+    // A note from someone with no tasks still shows, and someone who left keeps a name and color of their own.
+    check(await page.eval(`(() => {
+      const real = S.mgr.boards[S.mgr.weekOf || startWeek(S.view)];
+      const board = JSON.parse(JSON.stringify(real));
+      board.days[2].extras = (board.days[2].extras || []).concat([{ name: 'Mia Manager', text: 'Restocked towels' }]);
+      const first = board.days[0].groups[0];
+      board.days[0].groups.push({ name: first.name + ' Lee', tasks: [Object.assign({}, first.tasks[0], { id: 'gone|' + first.tasks[0].id })] });
+      S.mgr.boards[real.weekOf] = board;
+      S.mgr.people['Mia Manager'] = true;
+      render();
+      const note = !!document.querySelector('.wp[data-key="wp:Mia Manager"] .mextras') && document.querySelector('.wp[data-key="wp:Mia Manager"]').innerText.includes('Restocked towels');
+      const chips = Array.from(document.querySelectorAll('.wv-day')[0].querySelectorAll('.wv-chip'));
+      const left = chips.find((el) => el.dataset.name === first.name + ' Lee');
+      const still = chips.find((el) => el.dataset.name === first.name);
+      const named = left && still && left.innerText.includes(first.name + ' Lee') && still.querySelector('.wv-cname').innerText === first.name;
+      const apart = left && still && getComputedStyle(left).getPropertyValue('--pc') !== getComputedStyle(still).getPropertyValue('--pc');
+      S.mgr.boards[real.weekOf] = real;
+      delete S.mgr.people['Mia Manager'];
+      render();
+      return note && named && apart;
+    })()`), 'Week view: a note from someone with no tasks shows, and a past staffer gets their own name and color');
+    check(await page.eval(`(() => { const tops = Array.from(document.querySelectorAll('.wv-day')).map((el) => Math.round(el.getBoundingClientRect().top)); return new Set(tops).size === 1; })()`), 'desktop: the seven days sit side by side');
+    check(await page.eval(`Array.from(document.querySelectorAll('.wv-cname')).every((el) => el.scrollWidth <= el.clientWidth + 1)`), 'desktop: every name fits its chip');
+    await page.click('.wv-seg button', { text: 'Daily view' });
+    await page.waitFor('.dv-days');
+    await page.shot('desktop-manage-daily');
+    await page.noSideScroll('desktop daily view');
+    await page.click('.wv-seg button', { text: 'Week view' });
+    await page.waitFor('.wv-grid');
     await page.click('.seg button', { text: 'One-offs' });
     await page.waitFor('.oo-row');
     await page.shot('desktop-manage-oneoffs');
@@ -1020,6 +1129,9 @@ const SCENES = {
     await page.setValue('.unc-pick select[data-field=name]', 'Cora');
     await page.click('[data-act=assign]');
     await page.waitText('Cora has it now.');
+    await page.click('.wv-chip[data-name="Ana"]');
+    await page.waitFor('[data-act=move]');
+    await sleep(700); // it scrolls the person into view
     await page.click('[data-act=move]');
     await page.waitText('Move task');
     await page.shot('desktop-manage-move');
@@ -1094,6 +1206,17 @@ const SCENES = {
     await toWeek(page);
     await page.shot('narrow-manage-week');
     await page.noSideScroll('320 manage week');
+    check(await page.eval(`(() => { const tops = Array.from(document.querySelectorAll('.wv-day')).map((el) => Math.round(el.getBoundingClientRect().top)); return new Set(tops).size === 7; })()`), '320 wide: a row per day');
+    await page.click('.wv-chip');
+    await page.waitFor('.wp-body');
+    await sleep(700); // it scrolls the person into view
+    await page.noSideScroll('320 week view, a person open');
+    await page.click('.wv-seg button', { text: 'Daily view' });
+    await page.waitFor('.dv-days');
+    await page.shot('narrow-manage-daily');
+    await page.noSideScroll('320 daily view');
+    await page.click('.wv-seg button', { text: 'Week view' });
+    await page.waitFor('.wv-grid');
     check(await page.eval(`(() => { const labels = Array.from(document.querySelectorAll('.tab')); return labels.every((el) => el.scrollWidth <= el.clientWidth + 1); })()`), '320 wide: the five tab labels fit');
     await page.click('.seg button', { text: 'One-offs' });
     await page.waitFor('.oo-form');
@@ -1143,9 +1266,20 @@ const SCENES = {
     await page.noSideScroll('320, long text, manage overview');
     check(!(await page.eval(`!!document.querySelector('.ov img, .ov script')`)), 'markup in a one-off never becomes an element on the Overview');
     await toWeek(page);
+    await page.click('.wv-chip[data-name="Ana"]');
     await page.waitText('XXXX');
+    await sleep(700); // it scrolls the person into view
     await page.shot('stress-manage-week');
     await page.noSideScroll('320, long text, manage week');
+    check(!(await page.eval(`!!document.querySelector('.wp img, .wp script')`)), 'markup in a task never becomes an element in Week view');
+    await page.click('.wv-dayhead[data-date="2026-11-10"]');
+    await page.waitText('XXXX');
+    await sleep(700); // it scrolls up to the day buttons
+    await page.shot('stress-manage-daily');
+    await page.noSideScroll('320, long text, daily view');
+    check(!(await page.eval(`!!document.querySelector('.mgroup img, .mgroup script')`)), 'markup in a task never becomes an element in Daily view');
+    await page.click('.wv-seg button', { text: 'Week view' });
+    await page.waitFor('.wv-grid');
     await page.click('.seg button', { text: 'One-offs' });
     await page.waitFor('.oo-row');
     await page.waitText('XXXX');
