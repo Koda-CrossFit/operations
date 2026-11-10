@@ -3510,3 +3510,124 @@ test('tick: a tick that waited for the lock checks again, so the Friday run can\
   assert.strictEqual(new Set(subjectsSent).size, subjectsSent.length, 'every email went once');
   assert.ok(subjectsSent.length > 0);
 });
+
+test('A one-offs: whoever gets one in a week that is out gets an email, and only then', () => {
+  const gas = built();
+  gas.setNow(at(MON, '10:00'));
+  const mail = () => gas.state.mail;
+
+  const plain = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, by: 'Max', title: 'Wipe the mirrors', weekOf: MON, day: 'Tue', who: ['Ben'], minutes: 15 }));
+  assert.deepStrictEqual(plain.placed, { name: 'Ben', date: TUE });
+  assert.deepStrictEqual(plain.emailed, [], 'B priority sends nothing');
+  assert.strictEqual(mail().length, 0);
+
+  const top = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, by: 'Max', title: 'Fix the back door', details: 'The hinge is loose', priority: 'A', weekOf: MON, day: 'Wed', who: ['Ana'], minutes: 15 }));
+  assert.deepStrictEqual(top.placed, { name: 'Ana', date: WED });
+  assert.deepStrictEqual(top.emailed, ['Ana']);
+  assert.strictEqual(mail().length, 1);
+  assert.strictEqual(mail()[0].subject, '[TEST to Ana] New task for Wed, Nov 11: Fix the back door');
+  assert.match(mail()[0].htmlBody, /Hi Ana, a high-priority task was just added to your list\./);
+  assert.match(mail()[0].htmlBody, /The hinge is loose/);
+  assert.match(mail()[0].htmlBody, /\?me=Ana&amp;tab=schedule/);
+  assert.doesNotMatch(mail()[0].htmlBody, /\d+ min|minutes|\d:\d\d (AM|PM)/, 'no minutes and no times');
+
+  // Changing only the wording tells nobody again.
+  const reworded = ok(gas.post({ action: 'mgrOneOffEdit', code: CODE, id: top.id, title: 'Fix the back door hinge' }));
+  assert.deepStrictEqual(reworded.emailed, []);
+  assert.strictEqual(mail().length, 1);
+
+  // Moved to someone else: they hear about it.
+  const row = scheduleRows(gas).find((one) => one['One-Off ID'] === top.id);
+  const moved = ok(gas.post({ action: 'mgrAssign', code: CODE, id: row.ID, name: 'Cora', date: SAT, by: 'Max' }));
+  assert.deepStrictEqual(moved.emailed, ['Cora']);
+  assert.strictEqual(mail()[1].subject, '[TEST to Cora] New task for Sat, Nov 14: Fix the back door hinge');
+
+  // Raised from B to A while it's on someone's list.
+  const raised = ok(gas.post({ action: 'mgrOneOffEdit', code: CODE, id: plain.id, priority: 'A' }));
+  assert.deepStrictEqual(raised.emailed, ['Ben']);
+  assert.strictEqual(mail()[mail().length - 1].subject, '[TEST to Ben] Now high priority, Tue, Nov 10: Wipe the mirrors');
+  assert.match(mail()[mail().length - 1].htmlBody, /there is a change to high-priority work on your list/);
+  assert.match(mail()[mail().length - 1].htmlBody, /Now high priority\./);
+
+  // Same person, another day: the email says it moved.
+  const benRow = scheduleRows(gas).find((one) => one['One-Off ID'] === plain.id);
+  const otherDay = ok(gas.post({ action: 'mgrAssign', code: CODE, id: benRow.ID, name: 'Ben', date: THU, by: 'Max' }));
+  assert.deepStrictEqual(otherDay.emailed, ['Ben']);
+  assert.strictEqual(mail()[mail().length - 1].subject, '[TEST to Ben] Task moved to Thu, Nov 12: Wipe the mirrors');
+  assert.match(mail()[mail().length - 1].htmlBody, /Moved here from Tue, Nov 10\./);
+
+  // A manager placing one on themselves doesn't email themselves.
+  const mine = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, by: 'Max', title: 'Call the landlord', priority: 'A', weekOf: MON, day: 'Tue', who: ['Max'], minutes: 15 }));
+  assert.deepStrictEqual([mine.placed.name, mine.emailed], ['Max', []]);
+
+  // For today, the email says today and opens the Today tab.
+  const now = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Mop the spill by the rower', priority: 'A', weekOf: MON, day: 'Mon', who: ['Ana'], minutes: 10 }));
+  assert.deepStrictEqual(now.placed, { name: 'Ana', date: MON });
+  const todayMail = mail()[mail().length - 1];
+  assert.strictEqual(todayMail.subject, '[TEST to Ana] New task today: Mop the spill by the rower');
+  assert.match(todayMail.htmlBody, /<b>Today:<\/b>/);
+  assert.match(todayMail.htmlBody, /\?me=Ana&amp;tab=today/);
+
+  // A week not out yet waits for the Friday emails, and an uncovered one has nobody to tell.
+  const sent = mail().length;
+  const later = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Order chalk', priority: 'A', weekOf: NEXT_MON }));
+  assert.strictEqual(later.placed, null);
+  assert.deepStrictEqual(later.emailed, []);
+  const nobody = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Too big for anyone', priority: 'A', weekOf: MON, day: 'Tue', who: ['Cora'], minutes: 600 }));
+  assert.strictEqual(nobody.placed.name, '');
+  assert.deepStrictEqual(nobody.emailed, []);
+  assert.strictEqual(mail().length, sent);
+});
+
+test('A one-offs: someone going out of town hands theirs on, and whoever covers gets an email', () => {
+  const gas = built();
+  gas.setNow(at(MON, '10:00'));
+  const top = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Fix the back door', priority: 'A', weekOf: MON, day: 'Wed', minutes: 15 }));
+  assert.strictEqual(top.placed.name, 'Ana');
+  const before = gas.state.mail.length;
+  const away = ok(gas.post({ action: 'timeOffAdd', name: 'Ana', from: WED, to: WED }));
+  const holder = scheduleRows(gas).find((one) => one['One-Off ID'] === top.id);
+  assert.deepStrictEqual([holder.Name, holder.Date], ['Cora', WED], 'Cora is free that Wednesday');
+  assert.deepStrictEqual(away.emailed, ['Cora']);
+  assert.ok(gas.state.mail.slice(before).some((one) => one.subject === '[TEST to Cora] New task for Wed, Nov 11: Fix the back door'));
+  // Nobody hears twice about what they already had.
+  const again = ok(gas.post({ action: 'mgrRebuild', code: CODE, weekOf: MON }));
+  const stillWith = scheduleRows(gas).find((one) => one['One-Off ID'] === top.id);
+  assert.deepStrictEqual(again.emailed, stillWith.Name === 'Cora' && stillWith.Date === WED ? [] : [stillWith.Name].filter(Boolean));
+});
+
+test('A one-offs: a week built by Re-run matching before the Friday run waits for the Friday emails, and next week links to next week', () => {
+  const gas = built();
+  submit(gas, null, NEXT_MON);
+  const top = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Fix the back door', priority: 'A', weekOf: NEXT_MON, day: 'Wed', who: ['Ana'], minutes: 15 }));
+  assert.strictEqual(top.placed, null);
+  gas.setNow(at(FRI, '07:01'));
+  const rerun = ok(gas.post({ action: 'mgrRebuild', code: CODE, weekOf: NEXT_MON }));
+  assert.deepStrictEqual(rerun.emailed, [], 'that week was not out before the re-run');
+  gas.setNow(at(FRI, '07:05'));
+  gas.tick();
+  assert.ok(subjects(gas).includes('[TEST to Ana] Your Koda schedule: week of Nov 16'));
+  assert.ok(!subjects(gas).some((subject) => /New task/.test(subject)), 'no second email about the same task');
+
+  // Once it's out, an A one-off for next week links to that week's schedule.
+  const later = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Order chalk', priority: 'A', weekOf: NEXT_MON, day: 'Wed', who: ['Ana'], minutes: 10 }));
+  assert.deepStrictEqual(later.emailed, ['Ana']);
+  const last = gas.state.mail[gas.state.mail.length - 1];
+  assert.strictEqual(last.subject, '[TEST to Ana] New task for Wed, Nov 18: Order chalk');
+  assert.match(last.htmlBody, /\?me=Ana&amp;tab=schedule&amp;week=2026-11-16/);
+});
+
+test('A one-offs: someone getting their own task back after cancelling a trip is not emailed about it', () => {
+  const gas = built();
+  gas.setNow(at(MON, '10:00'));
+  const top = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Fix the back door', priority: 'A', weekOf: MON, day: 'Wed', who: ['Ana'], minutes: 15 }));
+  assert.strictEqual(top.placed.name, 'Ana');
+  const away = ok(gas.post({ action: 'timeOffAdd', name: 'Ana', from: WED, to: WED }));
+  assert.deepStrictEqual(away.emailed, [], 'only Ana can do it, so nobody else gets it');
+  const sent = gas.state.mail.length;
+  const back = ok(gas.post({ action: 'timeOffRemove', name: 'Ana', id: away.id }));
+  const row = scheduleRows(gas).find((one) => one['One-Off ID'] === top.id);
+  assert.strictEqual(row.Name, 'Ana', 'she has it back');
+  assert.deepStrictEqual(back.emailed, []);
+  assert.ok(!gas.state.mail.slice(sent).some((one) => /New task|moved|high priority/.test(one.subject)));
+});

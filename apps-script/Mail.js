@@ -244,6 +244,63 @@ function mailYourWeek_(person, weekOf) {
   return sendMail_(person.email, person.name, scheduleSubject_(weekOf), html);
 }
 
+/**
+ * An A-priority one-off that just landed on someone, moved to another of their days, or became A,
+ * in a week that's already out. changes: [{ row, kind: 'added' | 'moved' | 'raised', from }].
+ */
+function mailNewTasks_(person, changes) {
+  var info = nowInfo_();
+  var when = function (date) {
+    return date === info.date ? 'today' : dayLabel_(date);
+  };
+  var capital = function (text) {
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  };
+  var rowsInOrder = sortRows_(changes.map(function (change) {
+    return change.row;
+  }));
+  var sorted = rowsInOrder.map(function (row) {
+    return changes.filter(function (change) {
+      return change.row === row;
+    })[0];
+  });
+  var note = function (change) {
+    if (change.kind === 'moved') return 'Moved here from ' + when(change.from) + '.';
+    if (change.kind === 'raised') return 'Now high priority.';
+    return '';
+  };
+  var items = sorted
+    .map(function (change) {
+      var row = change.row;
+      var extra = [note(change), row.details].filter(Boolean);
+      return '<li style="margin:0 0 8px"><b>' + esc_(capital(when(row.date))) + ':</b> ' + esc_(row.title) + extra.map(function (line) {
+        return '<br><span style="color:#5F6B7A">' + esc_(line) + '</span>';
+      }).join('') + '</li>';
+    })
+    .join('');
+  var first = sorted[0];
+  var subject;
+  if (sorted.length > 1) subject = 'Changes to your Koda list';
+  else if (first.kind === 'moved') subject = 'Task moved to ' + when(first.row.date) + ': ' + first.row.title;
+  else if (first.kind === 'raised') subject = 'Now high priority, ' + when(first.row.date) + ': ' + first.row.title;
+  else subject = 'New task ' + (first.row.date === info.date ? 'today' : 'for ' + dayLabel_(first.row.date)) + ': ' + first.row.title;
+  var allAdded = sorted.every(function (change) {
+    return change.kind === 'added';
+  });
+  var hello = 'Hi ' + firstName_(person.name) + ', ';
+  var intro = allAdded ? hello + (sorted.length === 1 ? 'a high-priority task was' : 'high-priority tasks were') + ' just added to your list.' : hello + 'there ' + (sorted.length === 1 ? 'is a change' : 'are changes') + ' to high-priority work on your list.';
+  // The button opens what they need to see: today's list, or the week it's in.
+  var allToday = rowsInOrder.every(function (row) {
+    return row.date === info.date;
+  });
+  var nextWeek = rowsInOrder.every(function (row) {
+    return row.weekOf > info.monday;
+  });
+  var link = allToday ? siteLink_(person.name, 'today') : siteLink_(person.name, 'schedule', nextWeek ? rowsInOrder[0].weekOf : '');
+  var html = mailPage_(para_(intro) + '<ul style="margin:0 0 14px;padding-left:20px">' + items + '</ul>', { label: 'Open ' + APP_NAME_, url: link });
+  return sendMail_(person.email, person.name, subject, html);
+}
+
 function mailNothingThisWeek_(person, weekOf) {
   var html = mailPage_(para_('Hi ' + firstName_(person.name) + ", there's nothing on your list for the week of " + monthDay_(weekOf) + ', but thanks for sending your availability.'));
   return sendMail_(person.email, person.name, scheduleSubject_(weekOf), html);

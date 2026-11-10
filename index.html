@@ -622,6 +622,7 @@ select.input{
   font-size:15px;font-weight:500;color:var(--ink);transition:background-color .12s,border-color .12s;
 }
 .pick-big{flex:1;font-size:17px;font-weight:600;min-height:52px}
+.pick-note{margin-top:8px;font-size:14px;line-height:1.4;color:var(--muted)}
 .pick-week{flex:1;min-height:60px;line-height:1.3}
 .pick small{display:block;font-size:13px;font-weight:500;color:var(--muted)}
 .pick[aria-pressed=true] small{color:var(--koda)}
@@ -1472,6 +1473,10 @@ function afterBoot() {
   }
   if (S.tab === 'manage' && !view.me.manager) S.tab = 'today';
   place.set('tab', S.tab);
+  if (S.schedLinkWeek) {
+    S.schedWeek = view.week.nextWeek && view.week.nextWeek.weekOf === S.schedLinkWeek ? 'nextWeek' : 'thisWeek';
+    S.schedLinkWeek = '';
+  }
   // The tab's own data, once we know who this is. After that, the tabs and refreshIfDue keep it fresh.
   if (S.tabLoadedFor !== S.me) {
     S.tabLoadedFor = S.me;
@@ -3096,6 +3101,7 @@ function viewOneOffFields(formName, state, view, staffNames) {
     <div class="group" role="group" aria-label="Priority">
       <div class="label">Priority</div>
       <div class="picks">${PRIORITIES.map((priority) => pick('priority', priority, priority, String(state.priority).charAt(0) === priority, 'pick-big'))}</div>
+      <p class="pick-note">A emails whoever gets it, once the week's schedule is out.</p>
     </div>
     <div class="group" role="group" aria-label="About how long">
       <div class="label">About how long?</div>
@@ -3778,7 +3784,7 @@ async function pumpOutbox() {
       const board = S.mgr.boards[item.req.weekOf];
       if (board && !board.oneOffs.some((one) => one.id === reply.id)) board.oneOffs.push(reply.oneOff);
       if (reply.placed === null) S.mgr.added = board && board.held ? 'Added. It goes out with the schedule.' : 'Added. It goes out Friday at 7 AM.';
-      else if (reply.placed.name) S.mgr.added = 'Added. ' + firstName(reply.placed.name) + ' has it on ' + reply.oneOff.assignedLabel + '.';
+      else if (reply.placed.name) S.mgr.added = 'Added. ' + firstName(reply.placed.name) + ' has it on ' + reply.oneOff.assignedLabel + ((reply.emailed || []).indexOf(reply.placed.name) >= 0 ? ' and got an email.' : '.');
       else S.mgr.added = 'Added. Nobody fits it yet, so it shows as uncovered.';
       render();
     }
@@ -4110,7 +4116,7 @@ const A = {
       if (reply.ok === false) {
         S.errors[key] = reply.error;
       } else {
-        showToast(firstName(state.name) + ' has it now.');
+        showToast(firstName(state.name) + ' has it now' + ((reply.emailed || []).length ? ' and got an email.' : '.'));
         delete S.forms[key];
         await loadBoard(S.mgr.weekOf, true);
       }
@@ -4401,7 +4407,7 @@ const SUBMITS = {
       } else {
         S.busy.move = false;
         closeSheet();
-        showToast('Moved to ' + firstName(state.name) + '.');
+        showToast('Moved to ' + firstName(state.name) + ((reply.emailed || []).length ? '. They got an email.' : '.'));
         loadBoard(S.mgr.weekOf, true);
       }
     } catch (err) {
@@ -4453,7 +4459,7 @@ const SUBMITS = {
       } else {
         S.busy.oneoffEdit = false;
         closeSheet();
-        showToast('Saved.');
+        showToast((reply.emailed || []).length ? 'Saved. ' + nameList(reply.emailed.map(firstName)) + ' got an email.' : 'Saved.');
         await loadBoard(oneOffFormState().weekOf, true);
       }
     } catch (err) {
@@ -4719,6 +4725,9 @@ function start() {
   const samePerson = !linkName || linkName === S.me;
 
   const known = ['today', 'schedule', 'availability', 'hours', 'manage'];
+  // An email can point at next week's schedule. That week is for the Schedule tab, not the availability one.
+  const scheduleWeek = linkTab === 'schedule' && isMonday(linkWeek) ? linkWeek : '';
+  if (scheduleWeek) S.schedLinkWeek = scheduleWeek;
   if (linkTab && known.indexOf(linkTab) >= 0) {
     S.tab = linkTab;
     S.tabChosen = true;
@@ -4732,7 +4741,7 @@ function start() {
       S.tabChosen = true;
     }
   }
-  const week = linkWeek || (samePerson ? place.get('week') : '');
+  const week = (scheduleWeek ? '' : linkWeek) || (samePerson ? place.get('week') : '');
   if (isMonday(week)) {
     S.avail.week = week;
     place.set('week', week);

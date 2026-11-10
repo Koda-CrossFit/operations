@@ -1119,6 +1119,14 @@ const SCENES = {
     await page.waitText('Dust the trophy shelf');
     await page.gone('Saving...');
     await page.waitText('Added.');
+    check(await page.hasText('A emails whoever gets it'), 'the form says what A does');
+    await page.type('#oneoff-title', 'Fix the back door');
+    await page.click('.pick[data-field=priority][data-value=A]');
+    await page.click('.pick[data-field=day][data-value=Wed]');
+    await page.click('.oo-form button[type=submit]');
+    await page.waitText('and got an email.');
+    const outbox = await (await fetch(SITE + '/dev/emails')).json();
+    check(outbox.emails.some((one) => /New task for Wed, Nov 11: Fix the back door/.test(one.subject)), 'an A one-off this week emails whoever got it');
     await page.click('[data-act=oo-edit]');
     await page.waitText('Edit one-off');
     await page.shot('desktop-manage-oneoff-edit');
@@ -1416,6 +1424,13 @@ const SCENES = {
     await page.goto('/?me=Max');
     await page.waitText(OVERVIEW);
     check(true, "a link for someone else lands on their first tab, not the last person's");
+
+    // The email about an A one-off next week opens next week's schedule, and leaves availability alone.
+    await page.clearSite();
+    await page.goto('/?me=Ana&tab=schedule&week=2026-11-16');
+    await page.waitFor('.day');
+    check(await page.eval(`document.querySelector('.seg button[aria-pressed=true]').innerText === 'Next week' && document.querySelector('.tab[data-tab=schedule]').getAttribute('aria-current') === 'page'`), 'a schedule link with next week opens next week on Schedule');
+    check(await page.eval(`sessionStorage.getItem('koda-ops.v1.week') === null`), 'and leaves the availability week alone');
 
     await page.clearSite();
     await page.goto('/?me=Ben&tab=availability&week=2026-11-24');

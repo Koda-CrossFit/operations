@@ -55,8 +55,8 @@ function actionTable_() {
     boot: { run: apiBoot_ },
     availability: { run: apiAvailability_ },
     saveAvailability: { run: apiSaveAvailability_, write: true },
-    timeOffAdd: { run: apiTimeOffAdd_, write: true },
-    timeOffRemove: { run: apiTimeOffRemove_, write: true },
+    timeOffAdd: { run: apiTimeOffAdd_, write: true, notify: true },
+    timeOffRemove: { run: apiTimeOffRemove_, write: true, notify: true },
     taskToggle: { run: apiTaskToggle_, write: true },
     taskNote: { run: apiTaskNote_, write: true },
     taskClaim: { run: apiTaskClaim_, write: true },
@@ -71,11 +71,11 @@ function actionTable_() {
     mgrOverview: { run: apiMgrOverview_, manager: true },
     mgrBoard: { run: apiMgrBoard_, manager: true },
     mgrHours: { run: apiMgrHours_, manager: true },
-    mgrOneOffAdd: { run: apiMgrOneOffAdd_, manager: true, write: true },
-    mgrOneOffEdit: { run: apiMgrOneOffEdit_, manager: true, write: true },
+    mgrOneOffAdd: { run: apiMgrOneOffAdd_, manager: true, write: true, notify: true },
+    mgrOneOffEdit: { run: apiMgrOneOffEdit_, manager: true, write: true, notify: true },
     mgrOneOffDelete: { run: apiMgrOneOffDelete_, manager: true, write: true },
-    mgrAssign: { run: apiMgrAssign_, manager: true, write: true },
-    mgrRebuild: { run: apiMgrRebuild_, manager: true, write: true },
+    mgrAssign: { run: apiMgrAssign_, manager: true, write: true, notify: true },
+    mgrRebuild: { run: apiMgrRebuild_, manager: true, write: true, notify: true },
     mgrHoldWeek: { run: apiMgrHoldWeek_, manager: true, write: true },
     mgrRunHeldWeek: { run: apiMgrRunHeldWeek_, manager: true, write: true },
     mgrRemind: { run: apiMgrRemind_, manager: true, write: true },
@@ -96,8 +96,74 @@ function route_(req, isPost) {
   if (entry.manager) checkManagerCode_(action, req.code);
   if (!entry.write) return entry.run(req);
   return withLock_(function () {
-    return entry.run(req);
+    var before = entry.notify ? aOneOffHolders_() : null;
+    var result = entry.run(req);
+    if (before && result && typeof result === 'object') result.emailed = emailNewAOneOffs_(before, text_(entry.manager ? req.by : req.name));
+    return result;
   });
+}
+
+/* ------------------------------------------------- A one-offs: tell the person ---- */
+
+function isTopOneOff_(row) {
+  return !!row.oneOffId && /^A/.test(text_(row.priority).toUpperCase());
+}
+
+/**
+ * Taken before a change that can hand out one-offs: where every open one-off row is, and which weeks are
+ * already out. A week the change itself builds (Re-run matching before the Friday run) is left to the Friday emails.
+ */
+function aOneOffHolders_() {
+  var rows = Object.create(null); // 'id|name' -> [{ date, top }]
+  scheduleRows_().forEach(function (row) {
+    if (!row.oneOffId || !row.name || row.status !== 'open') return;
+    var key = row.oneOffId + '|' + row.name;
+    (rows[key] = rows[key] || []).push({ date: row.date, top: isTopOneOff_(row) });
+  });
+  var out = Object.create(null);
+  var monday = nowInfo_().monday;
+  [0, 7, 14].forEach(function (days) {
+    var weekOf = addDays_(monday, days);
+    out[weekOf] = isPublished_(weekOf);
+  });
+  return { rows: rows, out: out };
+}
+
+/**
+ * After a change that can hand out one-offs (adding or editing one, Assign or Move, Re-run matching, someone
+ * going out of town or coming back): anyone who now has an A one-off they didn't have, has it on a new day, or
+ * has one that just became A, in a week that was already out, gets one email saying which. Not the person who
+ * made the change. The Friday emails already list everything else. Returns the names emailed.
+ */
+function emailNewAOneOffs_(before, self) {
+  var today = nowInfo_().date;
+  var byName = Object.create(null);
+  var order = [];
+  scheduleRows_().forEach(function (row) {
+    if (!isTopOneOff_(row) || !row.name || row.status !== 'open' || row.date < today) return;
+    if (!before.out[row.weekOf] || (self && row.name.toLowerCase() === self.toLowerCase())) return;
+    var had = before.rows[row.oneOffId + '|' + row.name] || [];
+    var same = had.filter(function (one) {
+      return one.date === row.date;
+    })[0];
+    if (same && same.top) return; // nothing new for them
+    var change = same ? { kind: 'raised' } : had.length ? { kind: 'moved', from: had[0].date } : { kind: 'added' };
+    if (!byName[row.name]) {
+      byName[row.name] = [];
+      order.push(row.name);
+    }
+    byName[row.name].push(Object.assign({ row: row }, change));
+  });
+  var sent = [];
+  order.forEach(function (name) {
+    var person = personNamed_(name);
+    if (!person) return;
+    var went = bestEffort_('new task email to ' + name, function () {
+      return mailNewTasks_(person, byName[name]);
+    });
+    if (went) sent.push(name);
+  });
+  return sent;
 }
 
 function withLock_(work) {
