@@ -2654,6 +2654,28 @@ function assignableDays(board, view) {
 function options(items, selected) {
   return items.map((item) => html`<option value="${item.value}" ${item.value === selected ? new Safe('selected') : ''}>${item.label}</option>`);
 }
+/* The days someone can be given work by hand: the ones they said they're available (or their set days), from today on.
+   Managers can take any day. An older reply with no list leaves it to the server. */
+function workDaysFor(board, view, name) {
+  const days = assignableDays(board, view);
+  const allowed = name && board.workDays ? board.workDays[name] : null;
+  return allowed ? days.filter((day) => allowed.indexOf(day.date) >= 0) : days;
+}
+function pickDate(days, wanted, fallback) {
+  if (wanted && days.some((day) => day.date === wanted)) return wanted;
+  if (fallback && days.some((day) => day.date === fallback)) return fallback;
+  return days[0] ? days[0].date : '';
+}
+/* Everyone on the list for Who; anyone with no day left this week can't be picked. */
+function whoOptions(board, view, selected, blank) {
+  const people = board.staffNames;
+  return html`
+    <option value="" ${selected ? '' : new Safe('selected')}>${blank}</option>
+    ${people.map((name) => {
+      const none = !workDaysFor(board, view, name).length;
+      return html`<option value="${name}" ${name === selected ? new Safe('selected') : ''} ${none ? new Safe('disabled') : ''}>${firstNameOrFull(name, people)}${none ? ' (no days left)' : ''}</option>`;
+    })}`;
+}
 function viewUncovered(board, view, onlyDate) {
   const rows = [];
   board.days.forEach((day) => {
@@ -2676,7 +2698,8 @@ function viewUncovered(board, view, onlyDate) {
       ${shown.map((task) => {
         const key = 'assign:' + task.id;
         const state = form(key);
-        const dayValue = state.date || (days.some((day) => day.date === task.date) ? task.date : days[0] ? days[0].date : '');
+        const theirDays = state.name ? workDaysFor(board, view, state.name) : [];
+        const dayValue = pickDate(theirDays, state.date, task.date);
         return html`
           <div class="unc-row" data-key="${key}">
             <div class="unc-title">${task.title}</div>
@@ -2685,10 +2708,10 @@ function viewUncovered(board, view, onlyDate) {
               ? html`
                 <div class="unc-pick">
                   <select class="input" aria-label="Who" data-form="${key}" data-field="name">
-                    ${options([{ value: '', label: 'Who?' }].concat(people), state.name || '')}
+                    ${whoOptions(board, view, state.name || '', 'Who?')}
                   </select>
-                  <select class="input" aria-label="Which day" data-form="${key}" data-field="date">
-                    ${options(days.map((day) => ({ value: day.date, label: day.label })), dayValue)}
+                  <select class="input" aria-label="Which day" data-form="${key}" data-field="date" ${state.name ? '' : new Safe('disabled')}>
+                    ${state.name ? options(theirDays.map((day) => ({ value: day.date, label: day.label })), dayValue) : html`<option value="">Pick who first</option>`}
                   </select>
                   <button type="button" class="btn ${rows.length > 1 ? 'btn-soft' : 'btn-primary'} btn-sm" data-act="assign" data-id="${task.id}" ${isBusy(key) ? new Safe('disabled') : ''}>${isBusy(key) ? 'Saving...' : 'Assign'}</button>
                 </div>
@@ -3348,22 +3371,22 @@ const SHEETS = {
   move(data) {
     const board = S.mgr.boards[S.mgr.weekOf];
     const view = S.view;
-    const days = board ? assignableDays(board, view) : [];
     const state = form('move');
-    const people = board ? board.staffNames : [];
+    const days = board && state.name ? workDaysFor(board, view, state.name) : [];
+    const dayValue = pickDate(days, state.date, data.date);
     return sheetFrame('Move task', html`
       <p class="strong" style="margin-bottom:14px">${data.title}</p>
       <form data-submit="move" data-id="${data.id}" novalidate>
         <label class="field">
           <span class="label">Who</span>
           <select class="input" data-form="move" data-field="name">
-            ${options([{ value: '', label: 'Pick a person' }].concat(people.map((name) => ({ value: name, label: firstNameOrFull(name, people) }))), state.name || '')}
+            ${board ? whoOptions(board, view, state.name || '', 'Pick a person') : ''}
           </select>
         </label>
         <label class="field">
-          <span class="label">Which day</span>
-          <select class="input" data-form="move" data-field="date">
-            ${options(days.map((day) => ({ value: day.date, label: day.label })), state.date || '')}
+          <span class="label">Which day <span class="opt">(days they're available)</span></span>
+          <select class="input" data-form="move" data-field="date" ${state.name ? '' : new Safe('disabled')}>
+            ${state.name ? options(days.map((day) => ({ value: day.date, label: day.label })), dayValue) : html`<option value="">Pick who first</option>`}
           </select>
         </label>
         ${fieldError('move')}
@@ -4105,9 +4128,13 @@ const A = {
       render();
       return;
     }
-    const days = assignableDays(board, S.view);
     const task = board.days.reduce((found, day) => found || day.uncovered.find((one) => one.id === id), null);
-    const date = state.date || (task && days.some((day) => day.date === task.date) ? task.date : days[0].date);
+    const date = pickDate(workDaysFor(board, S.view, state.name), state.date, task && task.date);
+    if (!date) {
+      S.errors[key] = firstName(state.name) + ' has no days left this week.';
+      render();
+      return;
+    }
     S.busy[key] = true;
     S.errors[key] = '';
     render();
@@ -4115,6 +4142,7 @@ const A = {
       const reply = await apiWrite('mgrAssign', { code: S.code, id, name: state.name, date, by: S.me });
       if (reply.ok === false) {
         S.errors[key] = reply.error;
+        loadBoard(S.mgr.weekOf, true); // their days may have changed since this was loaded
       } else {
         showToast(firstName(state.name) + ' has it now' + ((reply.emailed || []).length ? ' and got an email.' : '.'));
         delete S.forms[key];
@@ -4135,7 +4163,7 @@ const A = {
     })));
     S.forms.move = { name: '', date: days.some((day) => day.date === el.dataset.date) ? el.dataset.date : days[0] ? days[0].date : '' };
     S.errors.move = '';
-    openSheet('move', { id: el.dataset.id, title });
+    openSheet('move', { id: el.dataset.id, title, date: el.dataset.date });
   },
   async 'mgr-remind'(el) {
     if (isBusy('remind')) return;
@@ -4397,13 +4425,21 @@ const SUBMITS = {
       render();
       return;
     }
+    const board = S.mgr.boards[S.mgr.weekOf];
+    const date = board ? pickDate(workDaysFor(board, S.view, state.name), state.date, S.sheet && S.sheet.data ? S.sheet.data.date : '') : state.date;
+    if (!date) {
+      S.errors.move = firstName(state.name) + ' has no days left this week.';
+      render();
+      return;
+    }
     S.busy.move = true;
     S.errors.move = '';
     render();
     try {
-      const reply = await apiWrite('mgrAssign', { code: S.code, id: el.dataset.id, name: state.name, date: state.date, by: S.me });
+      const reply = await apiWrite('mgrAssign', { code: S.code, id: el.dataset.id, name: state.name, date, by: S.me });
       if (reply.ok === false) {
         S.errors.move = reply.error;
+        loadBoard(S.mgr.weekOf, true); // their days may have changed since this was loaded
       } else {
         S.busy.move = false;
         closeSheet();
@@ -4564,6 +4600,10 @@ document.addEventListener('input', (event) => {
     const titleError = el.dataset.form + 'Title';
     if (el.dataset.field === 'title' && S.errors[titleError]) {
       S.errors[titleError] = '';
+      render();
+    }
+    if (el.dataset.field === 'name' && (el.dataset.form === 'move' || el.dataset.form.indexOf('assign:') === 0)) {
+      S.errors[el.dataset.form] = '';
       render();
     }
     if (el.dataset.form === 'off' && el.dataset.field === 'from') {

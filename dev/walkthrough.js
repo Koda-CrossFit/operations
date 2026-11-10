@@ -310,6 +310,14 @@ async function checkWeekView(page, where) {
   check(steady, `${where}: each person keeps one color everywhere`);
   check(distinct, `${where}: no two people share a color`);
 }
+/* The day list in an Assign or Move picker, against the days the server says that person can work from today on. */
+async function checkDayChoices(page, select, name, where) {
+  const board = await api({ action: 'mgrBoard', code: CODE, weekOf: await page.eval('S.mgr.weekOf || startWeek(S.view)') });
+  const today = await page.eval('S.view.now.date');
+  const expected = board.days.filter((day) => day.date >= today && !day.closed && board.workDays[name].indexOf(day.date) >= 0).map((day) => day.date);
+  const shown = await page.eval(`Array.from(document.querySelector(${JSON.stringify(select)}).options).map((one) => one.value)`);
+  check(JSON.stringify(shown) === JSON.stringify(expected), `${where}: only ${name}'s days are offered (${shown} vs ${expected})`);
+}
 /* What the Overview should show, checked against the server's own answer. */
 async function checkOverview(page, where) {
   const reply = await api({ action: 'mgrOverview', code: CODE });
@@ -802,9 +810,22 @@ const SCENES = {
     check(await page.hasText('Rank') === false, 'no raw labels');
 
     // Assign the uncovered task.
+    check(await page.eval(`(() => { const day = document.querySelector('.unc-pick select[data-field=date]'); return day.disabled && day.innerText.includes('Pick who first'); })()`), 'the day waits for a person');
     await page.click('[data-act=assign]');
     await page.waitText('Pick a person first.');
+    await page.setValue('.unc-pick select[data-field=name]', 'Ben');
+    await checkDayChoices(page, '.unc-pick select[data-field=date]', 'Ben', 'assign');
     await page.setValue('.unc-pick select[data-field=name]', 'Cora');
+    await checkDayChoices(page, '.unc-pick select[data-field=date]', 'Cora', 'assign after changing who');
+    check(await page.eval(`(() => {
+      const board = S.mgr.boards[S.mgr.weekOf];
+      const today = S.view.now.date;
+      return Array.from(document.querySelectorAll('.unc-pick select[data-field=name] option')).filter((one) => one.value).every((one) => {
+        const left = board.days.some((day) => day.date >= today && !day.closed && board.workDays[one.value].indexOf(day.date) >= 0);
+        return one.disabled === !left && one.innerText.includes('(no days left)') === !left;
+      });
+    })()`), 'anyone with no day left this week is listed but cannot be picked');
+    check(await page.eval(`(() => { const day = document.querySelector('.unc-pick select[data-field=date]'); return !day.disabled && S.mgr.boards[S.mgr.weekOf].workDays.Cora.indexOf(day.value) >= 0; })()`), 'the picked day is one of theirs');
     await page.click('[data-act=assign]');
     await page.waitText('Cora has it now.');
     await page.gone('Uncovered');
@@ -836,9 +857,32 @@ const SCENES = {
     await page.shot('phone-manage-move');
     await page.click('.sheet button[type=submit]');
     await page.waitText('Pick a person first.');
+    check(await page.hasText("days they're available"), 'the Move sheet says which days it lists');
     await page.setValue('.sheet select[data-field=name]', 'Ben');
+    await checkDayChoices(page, '.sheet select[data-field=date]', 'Ben', 'move');
     await page.click('.sheet button[type=submit]');
     await page.waitText('Moved to Ben.');
+    await sleep(300);
+
+    // Out of town for the rest of the week: Ben can't be picked, and a Move sheet left open on him says so and stays usable.
+    const benLeft = await page.eval(`(() => { const today = S.view.now.date; return S.mgr.boards[S.mgr.weekOf].workDays.Ben.filter((date) => date >= today); })()`);
+    check(benLeft.length > 0, `Ben has days left to take away (${benLeft})`);
+    await page.click('[data-act=move]');
+    await page.waitText('Move task');
+    await page.setValue('.sheet select[data-field=name]', 'Ben');
+    const away = await api({ action: 'timeOffAdd', name: 'Ben', from: benLeft[0], to: benLeft[benLeft.length - 1] });
+    check(away.ok, 'Ben goes out of town for the rest of the week');
+    await page.eval(`loadBoard(S.mgr.weekOf, true)`);
+    await page.waitFor('.sheet select[data-field=name] option[value="Ben"][disabled]');
+    check(await page.eval(`document.querySelector('.sheet select[data-field=name] option[value="Ben"]').innerText.includes('(no days left)')`), 'someone with no day left is listed but cannot be picked');
+    await page.click('.sheet button[type=submit]');
+    await page.waitText('Ben has no days left this week.');
+    check(await page.eval(`(() => { const button = document.querySelector('.sheet button[type=submit]'); return !button.disabled && button.innerText === 'Move'; })()`), 'and the Move button is ready again');
+    await page.click('.sheet [data-act=sheet-close]');
+    await page.gone('Move task');
+    await api({ action: 'timeOffRemove', name: 'Ben', id: away.id });
+    await page.eval(`loadBoard(S.mgr.weekOf, true)`);
+    await sleep(300);
     await sleep(200);
     await checkWeekView(page, 'phone week view after a move');
 

@@ -1476,7 +1476,48 @@ function apiMgrBoard_(req) {
     staffNames: activeStaff_().map(function (person) {
       return person.name;
     }),
+    workDays: workDaysMap_(weekOf),
   });
+}
+
+/**
+ * The dates in a week someone can be given work by hand (Assign or Move): Flexible people on the days they
+ * said they're available, Set people on their set days, managers any day. Never a closed day or a day
+ * they're out of town.
+ */
+function workDates_(person, weekOf) {
+  var closed = closedDays_();
+  var away = function (date) {
+    return timeOffRows_().some(function (off) {
+      return off.name === person.name && off.status !== 'cancelled' && off.from <= date && date <= (off.to || off.from);
+    });
+  };
+  var chose;
+  if (person.type === 'Flexible') {
+    var entry = availabilityMap_(weekOf)[person.name];
+    chose = function (date) {
+      return !!entry && !entry.none && Number(entry.hoursWanted) > 0 && Number((entry.dayHours || {})[dayKey_(date)]) > 0;
+    };
+  } else if (person.type === 'Set') {
+    chose = function (date) {
+      return (person.setDays || []).indexOf(dayKey_(date)) >= 0;
+    };
+  } else {
+    chose = function () {
+      return true;
+    };
+  }
+  return weekDates_(weekOf).filter(function (date) {
+    return !closed[date] && chose(date) && !away(date);
+  });
+}
+
+function workDaysMap_(weekOf) {
+  var map = {};
+  activeStaff_().forEach(function (person) {
+    map[person.name] = workDates_(person, weekOf);
+  });
+  return map;
 }
 
 /* ------------------------------------------------------------ managers: overview ---- */
@@ -1749,6 +1790,12 @@ function apiMgrAssign_(req) {
   var date = text_(req.date) ? requireDate_(req.date, 'day') : row.date;
   if (date < info.date) fail_('Please pick today or a later day.');
   if (closedNote_(date)) fail_('The gym is closed that day.');
+  if (workDates_(person, mondayOf_(date)).indexOf(date) < 0) {
+    var away = timeOffRows_().some(function (off) {
+      return off.name === person.name && off.status !== 'cancelled' && off.from <= date && date <= (off.to || off.from);
+    });
+    fail_(firstName_(person.name) + (away ? ' is out of town on ' + DAY_NAMES_[dayKey_(date)] + '.' : " isn't available on " + DAY_NAMES_[dayKey_(date)] + '.') + ' Please pick one of their days.');
+  }
   updateRow_(TABS_.SCHEDULE, row._row, { Name: person.name, Date: date, Day: dayKey_(date), 'Week Of': mondayOf_(date), Source: 'manual', Status: 'open' });
   moveOneOffsToWeek_([row], mondayOf_(date));
   log_(managerName_(req.by), 'task assigned', row.title + ' to ' + person.name + ' on ' + date);

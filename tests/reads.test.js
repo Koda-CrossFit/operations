@@ -218,7 +218,8 @@ function playWeek(gas, afterStep) {
   post({ action: 'mgrOneOffDelete', code: CODE, by: 'Mia', id: doomed.id });
   const board = get({ action: 'mgrBoard', code: CODE });
   const wednesday = board.days.find((day) => day.date === WED);
-  post({ action: 'mgrAssign', code: CODE, by: 'Max', id: wednesday.groups[0].tasks[0].id, name: 'Cora', date: THU });
+  const coraDay = board.workDays.Cora.find((date) => date >= THU);
+  post({ action: 'mgrAssign', code: CODE, by: 'Max', id: wednesday.groups[0].tasks[0].id, name: coraDay ? 'Cora' : 'Max', date: coraDay || THU });
   post({ action: 'hoursAdd', name: 'Dev', date: MON, start: '13:00', end: '15:15', note: 'Forgot to clock in' });
   const entry = post({ action: 'mgrHoursAdd', code: CODE, by: 'Max', name: 'Ben', date: MON, start: '10:00', end: '12:00', note: '' });
   post({ action: 'mgrHoursEdit', code: CODE, by: 'Max', id: entry.entry.id, end: '12:30' });

@@ -1628,6 +1628,7 @@ test('mgrAssign: moves a row, marks it manual, and the minutes follow on both si
 
   // Across the week boundary, Week Of follows the date.
   gas.call('runWeekBuild_', NEXT_MON);
+  submit(gas, ['Cora'], NEXT_MON);
   ok(gas.post({ action: 'mgrAssign', code: CODE, id: `task|T01|${SAT}`, name: 'Cora', date: NEXT_MON }));
   assert.strictEqual(rowById(gas, `task|T01|${SAT}`)['Week Of'], NEXT_MON);
 
@@ -1636,6 +1637,14 @@ test('mgrAssign: moves a row, marks it manual, and the minutes follow on both si
   refused(gas.post({ action: 'mgrAssign', code: CODE, id, name: '', date: TUE }), /pick your name/);
   refused(gas.post({ action: 'mgrAssign', code: CODE, id, name: 'Cora', date: '2026-11-01' }), /today or a later day/);
   refused(gas.post({ action: 'mgrAssign', code: CODE, id, name: 'Cora', date: 'soon' }), /pick a day/);
+  // Only a day they said they're available.
+  refused(gas.post({ action: 'mgrAssign', code: CODE, id, name: 'Ben', date: WED }), /Ben isn't available on Wednesday\. Please pick one of their days\./);
+  refused(gas.post({ action: 'mgrAssign', code: CODE, id, name: 'Cora', date: SUN }), /Cora isn't available on Sunday/);
+  refused(gas.post({ action: 'mgrAssign', code: CODE, id, name: 'Gus', date: WED }), /Gus isn't available on Wednesday/, 'a set person only on their set days');
+  ok(gas.post({ action: 'timeOffAdd', name: 'Ben', from: THU, to: THU }));
+  refused(gas.post({ action: 'mgrAssign', code: CODE, id, name: 'Ben', date: THU }), /Ben is out of town on Thursday/);
+  refused(gas.post({ action: 'mgrAssign', code: CODE, id, name: 'Dev', date: '2026-11-17' }), /Dev isn't available on Tuesday/, "next week, before they've said");
+  ok(gas.post({ action: 'mgrAssign', code: CODE, id: `task|T01|${FRI}`, name: 'Max', date: SUN }), 'a manager can take any open day');
   ok(gas.post({ action: 'taskToggle', name: 'Cora', id, done: true }));
   refused(gas.post({ action: 'mgrAssign', code: CODE, id, name: 'Ben', date: TUE }), /already done/);
 });
@@ -1647,7 +1656,7 @@ test('mgrRebuild: keeps manual and done rows, leaves today alone, and re-matches
   const manualId = `task|T01|${WED}`;
   const todayId = `task|T01|${MON}`;
   ok(gas.post({ action: 'taskToggle', name: 'Ana', id: doneId, done: true }));
-  ok(gas.post({ action: 'mgrAssign', code: CODE, id: manualId, name: 'Dev', date: WED }));
+  ok(gas.post({ action: 'mgrAssign', code: CODE, id: manualId, name: 'Max', date: WED }));
   const doneBefore = rowById(gas, doneId);
 
   // She's taken off the staff list, so everything of hers still ahead has to go elsewhere.
@@ -1661,7 +1670,7 @@ test('mgrRebuild: keeps manual and done rows, leaves today alone, and re-matches
   const done = rowById(gas, doneId);
   assert.deepStrictEqual([done.Name, done.Status, done['Done By'], done.Date], ['Ana', 'done', 'Ana', doneBefore.Date], 'done rows stay');
   const manual = rowById(gas, manualId);
-  assert.deepStrictEqual([manual.Name, manual.Source], ['Dev', 'manual'], 'manual rows stay');
+  assert.deepStrictEqual([manual.Name, manual.Source], ['Max', 'manual'], 'manual rows stay');
   assert.strictEqual(rowById(gas, todayId).Name, 'Ana', "today's list stays with her");
 
   const stillAna = scheduleRows(gas).filter((row) => row.Name === 'Ana' && row.Date > MON);
@@ -1692,6 +1701,7 @@ test('mgrRebuild: a row moved by hand into another week is not made again in its
   const gas = built();
   gas.call('runWeekBuild_', NEXT_MON);
   gas.setNow(at(MON, '10:00'));
+  submit(gas, ['Cora'], NEXT_MON);
   const moved = `task|T01|${SAT}`;
   ok(gas.post({ action: 'mgrAssign', code: CODE, id: moved, name: 'Cora', date: NEXT_MON }));
   const added = ok(gas.post({ action: 'mgrOneOffAdd', code: CODE, title: 'Moves too', weekOf: MON, minutes: 15, day: 'Wed' }));
@@ -2150,7 +2160,11 @@ test('mgrBoard: has the documented shape and the right numbers', () => {
   ok(save(gas, 'Ana', NEXT_MON, 4, { Mon: 1 }));
 
   const board = ok(gas.get({ action: 'mgrBoard', code: CODE }));
-  deepKeys(board, ['ok', 'weekOf', 'label', 'published', 'builtAt', 'weeks', 'onClock', 'days', 'people', 'nextWeek', 'oneOffs', 'staffNames'], 'mgrBoard');
+  deepKeys(board, ['ok', 'weekOf', 'label', 'published', 'builtAt', 'weeks', 'onClock', 'days', 'people', 'nextWeek', 'oneOffs', 'staffNames', 'workDays'], 'mgrBoard');
+  assert.deepStrictEqual(Object.keys(board.workDays).sort(), board.staffNames.slice().sort(), 'a list of days for everyone on the staff list');
+  assert.deepStrictEqual(board.workDays.Ana, [MON, WED, FRI], 'Flexible: the days they offered hours');
+  assert.deepStrictEqual(board.workDays.Gus, [THU, FRI], 'Set: their set days, not the Sunday he is out of town');
+  assert.strictEqual(board.workDays.Max.length, 7, 'a manager: any open day');
   assert.strictEqual(board.weekOf, MON);
   assert.strictEqual(board.label, 'Nov 9 - 15');
   assert.strictEqual(board.published, true);
