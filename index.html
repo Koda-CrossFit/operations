@@ -532,6 +532,11 @@ select.input{
 .mtask-note{display:flex;gap:6px;margin-top:4px;font-size:14px;line-height:1.4;color:var(--text)}
 .mtask-note svg{width:15px;height:15px;margin-top:2px;color:var(--koda-slate)}
 .mtask .btn{flex:none;width:auto;min-height:44px;padding:6px 12px;font-size:14px;border-radius:10px;border-color:var(--line);color:var(--koda)}
+.mtask-btns{flex:none;display:flex;flex-direction:column;align-items:stretch;gap:6px}
+.mtask .btn-delete{color:var(--danger)}
+.mmissed{margin-top:4px;padding:10px 0 4px;border-top:1px solid var(--line)}
+.mmissed .mextras-head{padding:0 16px}
+.mmissed .mtasks{padding:0 12px 4px 16px}
 .empty-line{padding:0 16px 14px;font-size:15px;color:var(--muted)}
 /* each person's color on the week board */
 .avatar-pc{background:var(--pc);color:#fff}
@@ -2747,7 +2752,14 @@ function viewMgrTask(task, day, board, view) {
         </div>
         ${task.note ? html`<div class="mtask-note">${I.note}<span>${task.note}</span></div>` : ''}
       </div>
-      ${canMove ? html`<button type="button" class="btn btn-line" data-act="move" data-id="${task.id}" data-date="${day.date}" aria-label="Move ${task.title}">Move</button>` : ''}
+      ${status === 'missed' || canMove
+        ? html`
+          <div class="mtask-btns">
+            ${status === 'missed' ? html`<button type="button" class="btn btn-line" data-act="mark-done" data-id="${task.id}" aria-label="Mark ${task.title} done">Mark done</button>` : ''}
+            ${canMove ? html`<button type="button" class="btn btn-line" data-act="move" data-id="${task.id}" data-date="${day.date}" aria-label="Move ${task.title}">Move</button>` : ''}
+            ${status === 'missed' ? html`<button type="button" class="btn btn-line btn-delete" data-act="delete-missed" data-id="${task.id}" aria-label="Delete ${task.title}">Delete</button>` : ''}
+          </div>`
+        : ''}
     </li>`;
 }
 /* A person's tasks on a day start open, now Daily view shows one day at a time. Hours rows start closed. */
@@ -2790,7 +2802,13 @@ function viewMgrDay(day, board, view) {
             <ul>${day.extras.map((item) => html`<li><b>${firstNameOrFull(item.name, board.staffNames)}:</b> ${item.text}</li>`)}</ul>
           </div>`
         : ''}
-      ${missed.length ? html`<p class="empty-line" style="padding-top:10px;border-top:1px solid var(--line)">Missed, nobody on it: ${missed.map((task) => task.title).join(', ')}</p>` : ''}
+      ${missed.length
+        ? html`
+          <div class="mmissed">
+            <p class="mextras-head">${missed.every((task) => task.status === 'missed') ? 'Missed, nobody on it' : 'Nobody on it'}</p>
+            <ul class="mtasks">${missed.map((task) => viewMgrTask(task, day, board, view))}</ul>
+          </div>`
+        : ''}
     </section>`;
 }
 function availText(person, duePassed) {
@@ -2843,6 +2861,24 @@ const PERSON_COLORS = [
   ['#9C36B5', '#F5E9F8'], // grape
   ['#495057', '#EDEFF1'], // gray
 ];
+/* A task on the week board, with whose it was, for the Mark done and Delete confirms. */
+function findMgrTask(id) {
+  const board = S.mgr.boards[S.mgr.weekOf];
+  if (!board) return null;
+  let found = null;
+  board.days.forEach((day) => {
+    day.groups.forEach((group) => group.tasks.forEach((task) => {
+      if (task.id === id) found = { task, day, name: group.name };
+    }));
+    day.uncovered.forEach((task) => {
+      if (task.id === id) found = { task, day, name: '' };
+    });
+  });
+  if (!found) return null;
+  found.who = found.name ? firstNameOrFull(found.name, board.staffNames) : '';
+  found.whose = (found.who ? found.who + "'s on " : 'nobody on it, ') + found.day.label;
+  return found;
+}
 /* Everyone the board mentions: the staff list, anyone with work or a note that week who has since left it. */
 function boardNames(board) {
   const names = board.staffNames.slice();
@@ -2891,7 +2927,7 @@ function viewWeekGrid(board, view) {
         ${board.days.map((day) => {
           const isToday = day.date === view.now.date;
           const open = day.uncovered.filter((task) => task.status === 'open').length;
-          const missed = day.uncovered.length - open;
+          const missed = day.uncovered.filter((task) => task.status === 'missed').length;
           return html`
             <div class="wv-day${isToday ? ' is-today' : ''}" data-key="wv:${day.date}">
               <button type="button" class="wv-dayhead" data-act="mgr-day" data-date="${day.date}" aria-label="${day.label}: open it in Daily view">
@@ -3766,6 +3802,26 @@ const CONFIRMED = {
     loadBoard(oneOffFormState().weekOf, true);
     return reply;
   },
+  async removeMissed(data) {
+    const reply = await apiWrite('mgrTaskRemove', { code: S.code, id: data.id, by: S.me });
+    if (reply.ok === false) {
+      loadBoard(S.mgr.weekOf, true);
+      return reply;
+    }
+    showToast('Deleted.');
+    loadBoard(S.mgr.weekOf, true);
+    return reply;
+  },
+  async markDone(data) {
+    const reply = await apiWrite('mgrTaskDone', { code: S.code, id: data.id, by: S.me });
+    if (reply.ok === false) {
+      loadBoard(S.mgr.weekOf, true);
+      return reply;
+    }
+    showToast('Marked done.');
+    loadBoard(S.mgr.weekOf, true);
+    return reply;
+  },
   async entryDelete(data) {
     const reply = await apiWrite('mgrHoursDelete', { code: S.code, id: data.id, by: S.me });
     if (reply.ok === false) return reply;
@@ -4085,6 +4141,28 @@ const A = {
     render();
     loadManage();
   },
+  'mark-done'(el) {
+    const found = findMgrTask(el.dataset.id);
+    if (!found) return;
+    openSheet('confirm', {
+      title: 'Mark it done?',
+      body: found.task.title + ', ' + found.whose + '. ' + (found.who ? 'It will show as done by ' + found.who + '.' : 'It will show as done by you.'),
+      yes: 'Mark done',
+      run: 'markDone',
+      id: el.dataset.id,
+    });
+  },
+  'delete-missed'(el) {
+    const found = findMgrTask(el.dataset.id);
+    if (!found) return;
+    openSheet('confirm', {
+      title: 'Delete this missed task?',
+      body: found.task.title + ', ' + found.whose + ". It comes off the schedule and won't count as missed.",
+      yes: 'Delete',
+      run: 'removeMissed',
+      id: el.dataset.id,
+    });
+  },
   'mgr-group'(el) {
     const key = el.dataset.key2;
     S.mgr.open[key] = !groupOpen(key);
@@ -4158,9 +4236,14 @@ const A = {
     const board = S.mgr.boards[S.mgr.weekOf];
     const days = assignableDays(board, S.view);
     let title = '';
-    board.days.forEach((day) => day.groups.forEach((group) => group.tasks.forEach((task) => {
-      if (task.id === el.dataset.id) title = task.title;
-    })));
+    board.days.forEach((day) => {
+      day.groups.forEach((group) => group.tasks.forEach((task) => {
+        if (task.id === el.dataset.id) title = task.title;
+      }));
+      day.uncovered.forEach((task) => {
+        if (task.id === el.dataset.id) title = task.title;
+      });
+    });
     S.forms.move = { name: '', date: days.some((day) => day.date === el.dataset.date) ? el.dataset.date : days[0] ? days[0].date : '' };
     S.errors.move = '';
     openSheet('move', { id: el.dataset.id, title, date: el.dataset.date });

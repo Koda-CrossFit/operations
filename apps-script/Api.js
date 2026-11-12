@@ -75,6 +75,8 @@ function actionTable_() {
     mgrOneOffEdit: { run: apiMgrOneOffEdit_, manager: true, write: true, notify: true },
     mgrOneOffDelete: { run: apiMgrOneOffDelete_, manager: true, write: true },
     mgrAssign: { run: apiMgrAssign_, manager: true, write: true, notify: true },
+    mgrTaskDone: { run: apiMgrTaskDone_, manager: true, write: true },
+    mgrTaskRemove: { run: apiMgrTaskRemove_, manager: true, write: true },
     mgrRebuild: { run: apiMgrRebuild_, manager: true, write: true, notify: true },
     mgrHoldWeek: { run: apiMgrHoldWeek_, manager: true, write: true },
     mgrRunHeldWeek: { run: apiMgrRunHeldWeek_, manager: true, write: true },
@@ -656,7 +658,7 @@ function rowForScheduler_(row) {
     minutes: row.minutes,
     date: row.date,
     day: row.day,
-    name: row.status === 'missed' ? '' : row.name,
+    name: row.status === 'missed' || row.status === 'removed' ? '' : row.name,
     source: row.source,
     partial: false,
   };
@@ -740,11 +742,15 @@ function matchInput_(weekOf) {
  */
 function matchWeek_(weekOf, keepRows) {
   var input = matchInput_(weekOf);
-  input.locked = keepRows.map(rowForScheduler_);
-
   var end = addDays_(weekOf, 6);
+  // A missed task a manager deleted is still in its place, so nothing makes it again.
+  var removed = scheduleRowsAll_().filter(function (row) {
+    return row.status === 'removed' && row.date >= weekOf && row.date <= end;
+  });
+  input.locked = keepRows.concat(removed).map(rowForScheduler_);
+
   var usedElsewhere = Object.create(null);
-  scheduleRows_().forEach(function (row) {
+  scheduleRowsAll_().forEach(function (row) {
     if (row.date < weekOf || row.date > end) usedElsewhere[row.id] = true;
   });
   var notUsedElsewhere = function (row) {
@@ -1800,6 +1806,39 @@ function apiMgrAssign_(req) {
   moveOneOffsToWeek_([row], mondayOf_(date));
   log_(managerName_(req.by), 'task assigned', row.title + ' to ' + person.name + ' on ' + date);
   return { task: managerTaskView_(requireRow_(row.id)) };
+}
+
+/**
+ * A manager checks off a missed task: it got done after all, just not checked. It counts as done by whoever
+ * had it, or by the manager when nobody did. Anything still to come, or today's, is checked off by whoever has it.
+ */
+function apiMgrTaskDone_(req) {
+  var row = requireRow_(req.id);
+  if (row.status === 'done') return { task: managerTaskView_(row) }; // a repeat tap or a retry changes nothing
+  if (row.status !== 'missed') fail_('Only a missed task can be checked off here. Anything else is checked off by whoever has it.');
+  var by = managerName_(req.by);
+  var who = row.name || by;
+  var now = Now_();
+  updateRow_(TABS_.SCHEDULE, row._row, { Status: 'done', 'Done At': now, 'Done By': who });
+  var item = row.oneOffId ? oneOffNamed_(row.oneOffId) : null;
+  if (item && item.status !== 'deleted') updateRow_(TABS_.ONE_OFFS, item._row, { Status: 'done', 'Done By': who, 'Done At': now });
+  log_(by, 'missed task checked off', row.title + ' (' + row.date + (row.name ? ', ' + row.name : '') + ')');
+  return { task: managerTaskView_(requireRow_(row.id)) };
+}
+
+/** A manager takes a missed task off the schedule: it no longer shows or counts as missed anywhere. It stays on the tab as 'removed', so matching doesn't make it again. */
+function apiMgrTaskRemove_(req) {
+  var wanted = text_(req.id);
+  var row = scheduleRows_().filter(function (candidate) {
+    return candidate.id === wanted;
+  })[0];
+  if (!row) return { removed: false }; // already gone: a repeat tap or a retry
+  if (row.status !== 'missed') fail_('Only a missed task can be deleted here.');
+  updateRow_(TABS_.SCHEDULE, row._row, { Status: 'removed' });
+  var item = row.oneOffId ? oneOffNamed_(row.oneOffId) : null;
+  if (item && item.status !== 'deleted') updateRow_(TABS_.ONE_OFFS, item._row, { Status: 'deleted' });
+  log_(managerName_(req.by), 'missed task deleted', row.title + ' (' + row.date + (row.name ? ', ' + row.name : ', nobody on it') + ')');
+  return { removed: true };
 }
 
 /** The day a set row was first down for, from its key. '' for anything else. */

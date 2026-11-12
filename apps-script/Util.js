@@ -889,7 +889,25 @@ function isAway_(name, date) {
   });
 }
 
+/**
+ * The schedule everyone sees. A missed task a manager deleted stays on the tab as 'removed', so matching
+ * still knows it was there (scheduleRowsAll_) and doesn't make it again, but nothing else ever shows it.
+ */
 function scheduleRows_() {
+  var cache = req_();
+  var all = scheduleRowsAll_();
+  var live = cache.typed[SCHEDULE_LIVE_];
+  if (live && live.from === all) return live.rows;
+  var rows = all.filter(function (row) {
+    return row.status !== 'removed';
+  });
+  cache.typed[SCHEDULE_LIVE_] = { from: all, rows: rows };
+  return rows;
+}
+
+var SCHEDULE_LIVE_ = 'Schedule (shown)';
+
+function scheduleRowsAll_() {
   return typed_(TABS_.SCHEDULE, function (rows) {
     return rows
       .map(function (row) {

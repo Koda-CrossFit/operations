@@ -2111,7 +2111,7 @@ test('every manager action needs the code', () => {
   const gas = built();
   gas.setNow(at(MON, '10:00'));
   const reads = ['mgrCheck', 'mgrOverview', 'mgrBoard', 'mgrHours'];
-  const writes = ['mgrOneOffAdd', 'mgrOneOffEdit', 'mgrOneOffDelete', 'mgrAssign', 'mgrRebuild', 'mgrRemind', 'mgrHoursAdd', 'mgrHoursEdit', 'mgrHoursDelete'];
+  const writes = ['mgrOneOffAdd', 'mgrOneOffEdit', 'mgrOneOffDelete', 'mgrAssign', 'mgrTaskDone', 'mgrTaskRemove', 'mgrRebuild', 'mgrRemind', 'mgrHoursAdd', 'mgrHoursEdit', 'mgrHoursDelete'];
   const snapshot = JSON.stringify([gas.rows('Schedule'), gas.rows('One-Offs'), gas.rows('Hours')]);
   reads.forEach((action) => refused(gas.get({ action, code: 'wrong' }), /manager code/));
   reads.concat(writes).forEach((action) => {
@@ -3644,4 +3644,102 @@ test('A one-offs: someone getting their own task back after cancelling a trip is
   assert.strictEqual(row.Name, 'Ana', 'she has it back');
   assert.deepStrictEqual(back.emailed, []);
   assert.ok(!gas.state.mail.slice(sent).some((one) => /New task|moved|high priority/.test(one.subject)));
+});
+
+test('mgrTaskDone: a manager checks off a missed task as done by whoever had it', () => {
+  const gas = built();
+  gas.setNow(at(MON, '10:00'));
+  const anaMonday = scheduleRows(gas).filter((row) => row.Name === 'Ana' && row.Date === MON);
+  ok(gas.post({ action: 'taskToggle', name: 'Ana', id: anaMonday[0].ID, done: true }));
+  gas.setNow(at(TUE, '00:35'));
+  gas.tick();
+  gas.setNow(at(TUE, '09:00'));
+
+  const missed = scheduleRows(gas).filter((row) => row.Status === 'missed');
+  const hers = missed.find((row) => row.Name === 'Ana');
+  assert.ok(hers, 'Ana left something on Monday');
+
+  const reply = ok(gas.post({ action: 'mgrTaskDone', code: CODE, id: hers.ID, by: 'Max' }));
+  assert.deepStrictEqual([reply.task.done, reply.task.doneBy, reply.task.status], [true, 'Ana', 'done']);
+  const after = rowById(gas, hers.ID);
+  assert.deepStrictEqual([after.Status, after['Done By'], after.Name, after.Date], ['done', 'Ana', 'Ana', MON], 'done by Ana, on the day it was for');
+  assert.ok(after['Done At']);
+  const logged = gas.rows('Log').filter((line) => line.Action === 'missed task checked off');
+  assert.strictEqual(logged.length, 1);
+  assert.strictEqual(logged[0].Who, 'Max', 'the Log says which manager did it');
+  ok(gas.post({ action: 'mgrTaskDone', code: CODE, id: hers.ID, by: 'Max' }));
+  assert.strictEqual(gas.rows('Log').filter((line) => line.Action === 'missed task checked off').length, 1, 'a repeat tap changes nothing');
+
+  const overview = ok(gas.get({ action: 'mgrOverview', code: CODE }));
+  assert.strictEqual(overview.counts.missed, missed.length - 1, 'the Overview stops counting it as missed');
+
+  ok(gas.post({ action: 'mgrTaskDone', code: CODE, id: hers.ID, done: false, by: 'Max' }));
+  assert.strictEqual(rowById(gas, hers.ID).Status, 'done', 'there is no un-checking: done stays done');
+
+  // Today's and later work belongs to whoever has it.
+  const benToday = scheduleRows(gas).find((row) => row.Name === 'Ben' && row.Date === TUE && row.Status === 'open');
+  refused(gas.post({ action: 'mgrTaskDone', code: CODE, id: benToday.ID, by: 'Max' }), /Only a missed task can be checked off here/);
+  ok(gas.post({ action: 'taskToggle', name: 'Ben', id: benToday.ID, done: true }));
+  refused(gas.post({ action: 'mgrTaskDone', code: CODE, id: 'nope', by: 'Max' }), /can't find/);
+});
+
+test('mgrTaskDone: a missed task nobody had is down as done by the manager', () => {
+  const gas = built([]); // nobody offered anything, so Monday's daily tasks have nobody on them
+  gas.setNow(at(TUE, '00:35'));
+  gas.tick();
+  gas.setNow(at(TUE, '09:00'));
+  const nobodys = scheduleRows(gas).find((row) => row.Status === 'missed' && !row.Name);
+  assert.ok(nobodys, 'something on Monday had nobody on it');
+  const reply = ok(gas.post({ action: 'mgrTaskDone', code: CODE, id: nobodys.ID, by: 'Mia' }));
+  assert.deepStrictEqual([reply.task.doneBy, rowById(gas, nobodys.ID).Name], ['Mia', ''], 'down as Mia, and still with nobody on it');
+});
+
+test('mgrTaskRemove: a manager deletes a missed task, and only a missed one', () => {
+  const gas = built();
+  gas.setNow(at(TUE, '00:35'));
+  gas.tick();
+  gas.setNow(at(TUE, '09:00'));
+  const missed = scheduleRows(gas).filter((row) => row.Status === 'missed');
+  assert.ok(missed.length >= 2, 'a couple of things were missed on Monday');
+  const before = ok(gas.get({ action: 'mgrOverview', code: CODE })).counts.missed;
+
+  const reply = ok(gas.post({ action: 'mgrTaskRemove', code: CODE, id: missed[0].ID, by: 'Mia' }));
+  assert.strictEqual(reply.removed, true);
+  assert.strictEqual(rowById(gas, missed[0].ID).Status, 'removed', 'it stays on the tab as removed');
+  const board = ok(gas.get({ action: 'mgrBoard', code: CODE, weekOf: MON }));
+  assert.ok(!board.days.some((day) => day.groups.some((group) => group.tasks.some((task) => task.id === missed[0].ID)) || day.uncovered.some((task) => task.id === missed[0].ID)), 'and is gone from the board');
+  assert.strictEqual(ok(gas.get({ action: 'mgrOverview', code: CODE })).counts.missed, before - 1, 'and no longer counts as missed');
+  const logged = gas.rows('Log').filter((line) => line.Action === 'missed task deleted');
+  assert.strictEqual(logged.length, 1);
+  assert.strictEqual(logged[0].Who, 'Mia');
+  assert.ok(logged[0].Details.includes(missed[0].Task) && logged[0].Details.includes(MON), 'the Log keeps what it was');
+  assert.deepStrictEqual(ok(gas.post({ action: 'mgrTaskRemove', code: CODE, id: missed[0].ID, by: 'Mia' })), { ok: true, removed: false }, 'a repeat tap is fine');
+  assert.strictEqual(rowById(gas, missed[1].ID).Status, 'missed', 'the other one is untouched');
+
+  // A missed task stays gone through a nightly roll and a re-run.
+  gas.setNow(at(WED, '00:35'));
+  gas.tick();
+  gas.setNow(at(WED, '09:00'));
+  ok(gas.post({ action: 'mgrRebuild', code: CODE, weekOf: MON }));
+  assert.deepStrictEqual(scheduleRows(gas).filter((row) => row.ID === missed[0].ID).map((row) => row.Status), ['removed'], 'nothing makes it again');
+
+  const open = scheduleRows(gas).find((row) => row.Status === 'open' && row.Date >= WED);
+  refused(gas.post({ action: 'mgrTaskRemove', code: CODE, id: open.ID, by: 'Mia' }), /Only a missed task can be deleted here/);
+  ok(gas.post({ action: 'mgrTaskDone', code: CODE, id: missed[1].ID, by: 'Mia' }));
+  refused(gas.post({ action: 'mgrTaskRemove', code: CODE, id: missed[1].ID, by: 'Mia' }), /Only a missed task can be deleted here/, 'not once it is checked off');
+});
+
+test('mgrTaskRemove: a deleted missed task with flex days is not made again by Re-run matching', () => {
+  const gas = built();
+  gas.setNow(at(TUE, '00:35'));
+  gas.tick();
+  gas.setNow(at(TUE, '09:00'));
+  const flexible = scheduleRows(gas).find((row) => row.Status === 'missed' && row.Date === MON && row['Task ID'] && gas.rows('Tasks').some((task) => task.ID === row['Task ID'] && Number(task['Flex Days']) >= 1));
+  assert.ok(flexible, 'a task with flex days was missed on Monday');
+  ok(gas.post({ action: 'mgrTaskRemove', code: CODE, id: flexible.ID, by: 'Max' }));
+  ok(gas.post({ action: 'mgrRebuild', code: CODE, weekOf: MON, by: 'Max' }));
+  const same = scheduleRows(gas).filter((row) => row.ID === flexible.ID);
+  assert.deepStrictEqual(same.map((row) => [row.Status, row.Date]), [['removed', MON]], 'still just the removed row, not new work on today');
+  const ids = scheduleRows(gas).map((row) => row.ID);
+  assert.strictEqual(new Set(ids).size, ids.length, 'no ID twice');
 });

@@ -1668,6 +1668,91 @@ const SCENES = {
     await page.noSideScroll('long uncovered list');
   },
 
+  /* A missed task that got done after all: a manager checks it off. */
+  async missed(page) {
+    await page.viewport(390, 844, true);
+    await page.resetWorld();
+    await setTime('2026-11-11T00:35:00-07:00');
+    await fetch(`${SITE}/dev/tick`);
+    await setTime('2026-11-11T09:00:00-07:00');
+    await page.clearSite();
+    await page.eval(`localStorage.setItem('koda-ops.v1.code', '"${CODE}"')`);
+    await page.goto('/?me=Max&tab=manage');
+    await page.waitText(OVERVIEW);
+    await toWeek(page);
+    const board = await api({ action: 'mgrBoard', code: CODE, weekOf: '2026-11-09' });
+    let target = null;
+    board.days.forEach((day) => day.groups.forEach((group) => group.tasks.forEach((task) => {
+      if (!target && task.status === 'missed') target = { id: task.id, name: group.name, date: day.date, title: task.title };
+    })));
+    check(!!target, 'something was missed on Tuesday');
+    check(await page.eval(`!document.querySelector('[data-act=mark-done]')`), 'nothing to mark while every dropdown is closed');
+    await page.click(`.wv-chip[data-name="${target.name}"]`);
+    await page.waitFor(`[data-act=mark-done][data-id="${target.id}"]`);
+    await sleep(700); // it scrolls the person into view
+    check(await page.eval(`document.querySelectorAll('[data-act=mark-done]').length === document.querySelectorAll('.wp-body .mstat.is-missed').length`), 'every missed task in the open dropdown has Mark done, and nothing else does');
+    await page.shot('phone-manage-missed');
+    await page.noSideScroll('missed tasks');
+    await page.click(`[data-act=mark-done][data-id="${target.id}"]`);
+    await page.waitText('Mark it done?');
+    check(await page.hasText(`It will show as done by ${target.name}.`), 'the confirm says whose it counts as');
+    await page.shot('phone-manage-mark-done');
+    await page.click('.sheet .btn', { text: 'Mark done' });
+    await page.waitText('Marked done.');
+    await sleep(1200);
+    const after = await api({ action: 'mgrBoard', code: CODE, weekOf: '2026-11-09' });
+    let done = null;
+    after.days.forEach((day) => day.groups.forEach((group) => group.tasks.forEach((task) => {
+      if (task.id === target.id) done = task;
+    })));
+    check(done && done.done && done.doneBy === target.name, `the server has it done by ${target.name}`);
+    check(await page.eval(`!document.querySelector('[data-act=mark-done][data-id="${target.id}"]')`), 'and the button is gone');
+    check(await page.eval(`document.querySelector('[data-key="mt:${target.id}"]').innerText.includes('Done')`), 'the row reads as done');
+
+    // Daily view: the same button on the day itself, including anything missed with nobody on it.
+    await page.click(`.wv-seg button`, { text: 'Daily view' });
+    await page.waitFor('.dv-days');
+    await page.click(`.dv-day[data-date="${target.date}"]`);
+    await page.waitFor(`[data-key="d:${target.date}"]`);
+    const missedLeft = after.days.find((day) => day.date === target.date);
+    const expected = missedLeft.groups.reduce((sum, group) => sum + group.tasks.filter((task) => task.status === 'missed').length, 0) + missedLeft.uncovered.filter((task) => task.status === 'missed').length;
+    check(await page.eval(`document.querySelectorAll('[data-key="d:${target.date}"] [data-act=mark-done]').length`) === expected, `Daily view offers Mark done on each missed task that day (${expected})`);
+    await page.shot('phone-manage-daily-missed');
+    await page.noSideScroll('daily view, missed tasks');
+
+    // Delete one that's still missed.
+    const gone = await page.eval(`(() => { const button = document.querySelector('[data-key="d:${target.date}"] [data-act=delete-missed]'); return button ? button.dataset.id : ''; })()`);
+    check(!!gone, 'a missed task has Delete');
+    await page.click(`[data-act=delete-missed][data-id="${gone}"]`);
+    await page.waitText('Delete this missed task?');
+    check(await page.hasText("It comes off the schedule and won't count as missed."), 'the confirm says what Delete does');
+    await page.shot('phone-manage-delete-missed');
+    await page.click('.sheet .btn', { text: 'Delete' });
+    await page.waitText('Deleted.');
+    await sleep(1200);
+    const afterDelete = await api({ action: 'mgrBoard', code: CODE, weekOf: '2026-11-09' });
+    const stillThere = afterDelete.days.some((day) => day.groups.some((group) => group.tasks.some((task) => task.id === gone)) || day.uncovered.some((task) => task.id === gone));
+    check(!stillThere, 'the server no longer has it');
+    check(await page.eval(`!document.querySelector('[data-key="mt:${gone}"]')`), 'and it is gone from the day');
+    await page.click(`.wv-seg button`, { text: 'Week view' });
+    await page.waitFor('.wv-grid');
+
+    // Something nobody had, checked off by a manager, is done: the week only counts what is still missed.
+    check(await page.eval(`(() => {
+      const real = S.mgr.boards[S.mgr.weekOf];
+      const board = JSON.parse(JSON.stringify(real));
+      const day = board.days[1];
+      const base = { title: 'Wipe the mirrors', details: '', priority: 'B', top: false, note: '', date: day.date, kind: 'recurring', rolled: false, minutes: 10, source: 'auto' };
+      day.uncovered = [Object.assign({}, base, { id: 'x|done', done: true, doneAt: '9:00 AM', doneBy: 'Max', status: 'done' }), Object.assign({}, base, { id: 'x|missed', title: 'Dust the fans', done: false, doneAt: '', doneBy: '', status: 'missed' })];
+      S.mgr.boards[real.weekOf] = board;
+      render();
+      const cell = document.querySelectorAll('.wv-day')[1].innerText;
+      S.mgr.boards[real.weekOf] = real;
+      render();
+      return cell.includes('1 missed') && !cell.includes('2 missed');
+    })()`), 'a checked-off task nobody had no longer counts as missed in the week');
+  },
+
   /* Add to home screen: what the browser makes of the manifest. */
   async pwa(page) {
     await page.viewport(390, 844, true);
