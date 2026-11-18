@@ -2110,15 +2110,15 @@ test('monthly: says nothing about a month from before the first week', () => {
 test('every manager action needs the code', () => {
   const gas = built();
   gas.setNow(at(MON, '10:00'));
-  const reads = ['mgrCheck', 'mgrOverview', 'mgrBoard', 'mgrHours'];
-  const writes = ['mgrOneOffAdd', 'mgrOneOffEdit', 'mgrOneOffDelete', 'mgrAssign', 'mgrTaskDone', 'mgrTaskRemove', 'mgrRebuild', 'mgrRemind', 'mgrHoursAdd', 'mgrHoursEdit', 'mgrHoursDelete'];
-  const snapshot = JSON.stringify([gas.rows('Schedule'), gas.rows('One-Offs'), gas.rows('Hours')]);
+  const reads = ['mgrCheck', 'mgrOverview', 'mgrBoard', 'mgrHours', 'mgrRecurring'];
+  const writes = ['mgrOneOffAdd', 'mgrOneOffEdit', 'mgrOneOffDelete', 'mgrAssign', 'mgrTaskDone', 'mgrTaskRemove', 'mgrRebuild', 'mgrRemind', 'mgrHoursAdd', 'mgrHoursEdit', 'mgrHoursDelete', 'mgrRecurringAdd', 'mgrRecurringEdit'];
+  const snapshot = JSON.stringify([gas.rows('Schedule'), gas.rows('One-Offs'), gas.rows('Hours'), gas.rows('Tasks')]);
   reads.forEach((action) => refused(gas.get({ action, code: 'wrong' }), /manager code/));
   reads.concat(writes).forEach((action) => {
     refused(gas.post({ action, code: 'wrong', title: 'x', weekOf: MON, id: `task|T01|${MON}`, name: 'Cora' }), /manager code/);
     refused(gas.post({ action, title: 'x', weekOf: MON, id: `task|T01|${MON}`, name: 'Cora' }), /manager code/);
   });
-  assert.strictEqual(JSON.stringify([gas.rows('Schedule'), gas.rows('One-Offs'), gas.rows('Hours')]), snapshot);
+  assert.strictEqual(JSON.stringify([gas.rows('Schedule'), gas.rows('One-Offs'), gas.rows('Hours'), gas.rows('Tasks')]), snapshot);
   assert.deepStrictEqual(ok(gas.get({ action: 'mgrCheck', code: CODE })), { ok: true });
   assert.deepStrictEqual(ok(gas.post({ action: 'mgrCheck', code: CODE })), { ok: true }, 'reads work as POST too, which keeps the code out of the URL');
 });
@@ -2325,7 +2325,7 @@ test('mgrOverview: this week in one reply, with the documented shape and the rig
   assert.strictEqual(ov.days[6].closed, 'Meet day');
 
   assert.strictEqual(ov.tasks.length, gas.rows('Tasks').length, 'every row of the Tasks tab');
-  ov.tasks.forEach((task) => deepKeys(task, ['id', 'title', 'cadence', 'priority', 'days', 'minutes', 'active', 'done', 'scheduled'], task.id));
+  ov.tasks.forEach((task) => deepKeys(task, ['id', 'title', 'cadence', 'priority', 'days', 'minutes', 'active', 'thisWeek', 'done', 'scheduled'], task.id));
   const task = (id) => ov.tasks.find((line) => line.id === id);
   assert.deepStrictEqual([task('T01').days, task('T01').cadence, task('T01').minutes, task('T01').done, task('T01').scheduled], ['Mon-Sat', 'Daily', 15, 1, 6]);
   assert.strictEqual(task('T08').days, 'Set');
@@ -3078,7 +3078,7 @@ test('all the backend files are there, and the manifest has the right scopes', (
 
 test('every top-level name across the backend is unique, and private ones end in an underscore', () => {
   const seen = new Map();
-  const publicNames = new Set(['doGet', 'doPost', 'tick', 'authorize', 'installTick', 'schedPriorityScore', 'schedBuildWeek', 'schedFillOpen']);
+  const publicNames = new Set(['doGet', 'doPost', 'tick', 'authorize', 'installTick', 'schedPriorityScore', 'schedBuildWeek', 'schedFillOpen', 'schedTaskInWeek']);
   scriptFiles.forEach((file) => {
     const code = fs.readFileSync(path.join(SCRIPT_DIR, file), 'utf8');
     [...code.matchAll(/^(?:function|var|const|let|class)\s+([A-Za-z0-9_$]+)/gm)].forEach((match) => {
@@ -3788,4 +3788,175 @@ test('mgrTaskRemove: a deleted missed task with flex days is not made again by R
   assert.deepStrictEqual(same.map((row) => [row.Status, row.Date]), [['removed', MON]], 'still just the removed row, not new work on today');
   const ids = scheduleRows(gas).map((row) => row.ID);
   assert.strictEqual(new Set(ids).size, ids.length, 'no ID twice');
+});
+
+/* ------------------------------------------------------------ repeating tasks ---- */
+
+const taskRow = (gas, id) => gas.rows('Tasks').find((row) => row.ID === id);
+const rowsOfTask = (gas, id) => gas.rows('Schedule').filter((row) => row['Task ID'] === id);
+const addRecurring = (gas, fields) => gas.post({ action: 'mgrRecurringAdd', code: CODE, by: 'Mia', ...fields });
+
+test('mgrRecurring: every task, how often it runs, and the next week it does', () => {
+  const gas = built();
+  gas.setNow(at(TUE, '09:00'));
+  const reply = ok(gas.get({ action: 'mgrRecurring', code: CODE }));
+  deepKeys(reply, ['ok', 'tasks', 'weeks'], 'mgrRecurring');
+  assert.strictEqual(reply.tasks.length, gas.rows('Tasks').length, 'every row of the Tasks tab');
+  reply.tasks.forEach((one) => deepKeys(one, ['id', 'title', 'details', 'priority', 'minutes', 'days', 'daysText', 'every', 'canMove', 'active', 'setOnly', 'next', 'nextLabel'], one.id));
+  const t01 = reply.tasks.find((one) => one.id === 'T01');
+  assert.deepStrictEqual([t01.daysText, t01.every, t01.canMove, t01.next, t01.nextLabel], ['Mon-Sat', 1, false, MON, 'Nov 9 - 15']);
+  assert.strictEqual(reply.tasks.find((one) => one.id === 'T08').setOnly, true);
+  assert.deepStrictEqual(reply.weeks.slice(0, 2).map((week) => [week.weekOf, week.label, week.out]), [[MON, 'Nov 9 - 15', true], [NEXT_MON, 'Nov 16 - 22', false]]);
+  assert.strictEqual(reply.weeks.length, 8);
+  refused(gas.get({ action: 'mgrRecurring', code: 'wrong' }), /manager code/);
+});
+
+test('mgrRecurringAdd: a weekly task goes on the week that is out from today on, around everyone else, and Friday picks it up', () => {
+  const gas = built();
+  gas.setNow(at(TUE, '09:00'));
+  const before = gas.rows('Schedule');
+  refused(addRecurring(gas, { title: '  ', days: ['Wed'] }), /what needs done/);
+  refused(addRecurring(gas, { title: 'Mirrors', days: [] }), /at least one day/);
+  refused(addRecurring(gas, { title: 'Mirrors', days: ['Wed'], every: 'often' }), /every week or every 2 weeks/);
+  refused(addRecurring(gas, { title: 'Mirrors', days: ['Wed'], starts: '2026-11-02' }), /this week or a later one/);
+  refused(addRecurring(gas, { title: 'Mirrors', days: ['Wed'], starts: TUE }), /Monday/);
+  refused(addRecurring(gas, { title: 'Mirrors', days: ['Wed'], priority: 'Z' }), /A, B or C/);
+  assert.strictEqual(gas.rows('Tasks').length, 15, 'a refusal adds nothing');
+
+  const reply = ok(addRecurring(gas, { title: 'Wipe the mirrors', details: 'Both bathrooms', priority: 'b', minutes: 20, days: ['Wed', 'Mon'], every: 1, starts: MON }));
+  assert.strictEqual(reply.id, 'T16', 'one past the highest ID');
+  const saved = taskRow(gas, 'T16');
+  assert.deepStrictEqual(
+    [saved.Task, saved.Details, saved.Priority, saved.Minutes, saved.Days, saved['How Frequent'], String(saved.Every), saved.Starts, saved['Flex Days'], String(saved.Active).toUpperCase()],
+    ['Wipe the mirrors', 'Both bathrooms', 'B', 20, 'Mon, Wed', '2x per week', '1', MON, 1, 'TRUE']
+  );
+  const placed = rowsOfTask(gas, 'T16');
+  assert.strictEqual(reply.placed, placed.length);
+  assert.ok(placed.length >= 1, 'it went on this week');
+  assert.ok(placed.every((row) => row.Date >= TUE && row.Date <= SUN && row.Source !== 'manual'), 'from today on, this week, matched like anything else');
+  assert.ok(placed.some((row) => row.ID === `task|T16|${WED}`), "Wednesday's");
+  assert.deepStrictEqual(
+    gas.rows('Schedule').filter((row) => row['Task ID'] !== 'T16'),
+    before,
+    "nobody else's work moved"
+  );
+  assert.deepStrictEqual([reply.task.title, reply.task.daysText, reply.task.next], ['Wipe the mirrors', 'Mon, Wed', MON]);
+  const logged = gas.rows('Log').filter((line) => line.Action === 'task added');
+  assert.deepStrictEqual(logged.map((line) => line.Who), ['Mia']);
+
+  submit(gas, null, NEXT_MON);
+  gas.setNow(at(FRI, '07:00'));
+  gas.tick();
+  assert.ok(rowsOfTask(gas, 'T16').some((row) => row['Week Of'] === NEXT_MON), 'the Friday build has it too');
+  assert.strictEqual(ok(addRecurring(gas, { title: 'Dust the fans', days: ['Sat'] })).id, 'T17');
+});
+
+test('mgrRecurringAdd: every 2 weeks waits for its first week, then skips a week', () => {
+  const gas = built();
+  gas.setNow(at(TUE, '09:00'));
+  const reply = ok(addRecurring(gas, { title: 'Clean out the fridge', minutes: 30, days: ['Thu'], every: 2, starts: NEXT_MON }));
+  assert.strictEqual(reply.placed, 0, 'its first week is not out yet');
+  assert.deepStrictEqual([reply.task.every, reply.task.next, reply.task.daysText], [2, NEXT_MON, 'Thu, every 2 weeks']);
+  assert.strictEqual(taskRow(gas, reply.id)['How Frequent'], '1x every 2 weeks');
+  assert.strictEqual(taskRow(gas, reply.id)['Flex Days'], 6, 'once a week: it can move anywhere in its week');
+
+  submit(gas, null, NEXT_MON);
+  gas.setNow(at(FRI, '07:00'));
+  gas.tick();
+  assert.ok(rowsOfTask(gas, reply.id).some((row) => row['Week Of'] === NEXT_MON), 'on in its first week');
+  const overview = ok(gas.get({ action: 'mgrOverview', code: CODE }));
+  assert.strictEqual(overview.tasks.find((one) => one.id === reply.id).thisWeek, false, 'this week is its week off');
+
+  const WEEK_AFTER = '2026-11-23';
+  submit(gas, null, WEEK_AFTER);
+  gas.setNow(at('2026-11-20', '07:00'));
+  gas.tick();
+  assert.ok(gas.rows('Schedule').some((row) => row['Week Of'] === WEEK_AFTER), 'the week after was built');
+  assert.ok(!rowsOfTask(gas, reply.id).some((row) => row['Week Of'] === WEEK_AFTER), 'and it skipped that one');
+  const listed = ok(gas.get({ action: 'mgrRecurring', code: CODE })).tasks.find((one) => one.id === reply.id);
+  assert.strictEqual(listed.next, NEXT_MON, 'on Friday the 20th, this week is one of its weeks');
+});
+
+test('mgrRecurringAdd: a sheet made before Every and Starts gets those columns added', () => {
+  const gas = built();
+  const sheet = gas.sheet('Tasks');
+  const values = sheet.getDataRange().getValues();
+  const width = values[0].indexOf('Every');
+  assert.ok(width > 0);
+  sheet.clear();
+  sheet.getRange(1, 1, values.length, width).setValues(values.map((row) => row.slice(0, width)));
+  assert.ok(!('Every' in gas.rows('Tasks')[0]), 'like the live sheet before this change');
+  gas.setNow(at(TUE, '09:00'));
+  assert.ok(ok(gas.get({ action: 'mgrRecurring', code: CODE })).tasks.every((one) => one.every === 1), 'reads fine without them');
+
+  const reply = ok(addRecurring(gas, { title: 'Clean out the fridge', days: ['Thu'], every: 2, starts: NEXT_MON }));
+  const headers = sheet.getDataRange().getValues()[0];
+  assert.deepStrictEqual(headers.slice(width), ['Every', 'Starts']);
+  assert.deepStrictEqual([String(taskRow(gas, reply.id).Every), taskRow(gas, reply.id).Starts], ['2', NEXT_MON]);
+  assert.strictEqual(taskRow(gas, 'T01').Every, '', 'older rows stay blank, which means every week');
+  assert.strictEqual(ok(gas.get({ action: 'mgrRecurring', code: CODE })).tasks.find((one) => one.id === reply.id).next, NEXT_MON);
+});
+
+test('mgrRecurringEdit: words go on what is not done, new days re-match from tomorrow, Stop takes it off, Start puts it back', () => {
+  const gas = built();
+  gas.setNow(at(TUE, '09:00'));
+  const id = ok(addRecurring(gas, { title: 'Wipe the mirrors', minutes: 20, days: ['Tue', 'Fri'], starts: MON })).id;
+  assert.ok(rowsOfTask(gas, id).length >= 1);
+
+  ok(gas.post({ action: 'mgrRecurringEdit', code: CODE, by: 'Mia', id, title: 'Wipe all the mirrors', details: 'Glass cleaner is under the sink' }));
+  assert.strictEqual(taskRow(gas, id).Task, 'Wipe all the mirrors');
+  assert.ok(rowsOfTask(gas, id).every((row) => row.Task === 'Wipe all the mirrors' && row.Details === 'Glass cleaner is under the sink'), 'on what is already scheduled');
+  assert.strictEqual(taskRow(gas, id).Days, 'Tue, Fri', 'words alone leave the days as they were');
+
+  const todays = rowsOfTask(gas, id).filter((row) => row.Date === TUE && row.Name);
+  const moved = ok(gas.post({ action: 'mgrRecurringEdit', code: CODE, by: 'Mia', id, days: ['Tue', 'Sat'] }));
+  const now = rowsOfTask(gas, id);
+  assert.ok(!now.some((row) => row.ID === `task|${id}|${FRI}`), 'Friday came off');
+  assert.ok(now.some((row) => row.ID === `task|${id}|${SAT}`), 'Saturday went on');
+  todays.forEach((row) => assert.ok(now.some((one) => one.ID === row.ID && one.Name === row.Name && one.Date === TUE), "today's stays with whoever has it"));
+  assert.ok(moved.removed >= 1 && moved.placed >= 1);
+  assert.deepStrictEqual([taskRow(gas, id).Days, taskRow(gas, id)['How Frequent']], ['Tue, Sat', '2x per week']);
+
+  const sameWeeks = ok(gas.post({ action: 'mgrRecurringEdit', code: CODE, by: 'Mia', id, starts: NEXT_MON }));
+  assert.deepStrictEqual([sameWeeks.removed, sameWeeks.placed, taskRow(gas, id).Starts], [0, 0, MON], 'naming a later week it already runs in changes nothing');
+
+  const stopped = ok(gas.post({ action: 'mgrRecurringEdit', code: CODE, by: 'Mia', id, active: false }));
+  assert.ok(stopped.removed >= 1);
+  assert.ok(!rowsOfTask(gas, id).some((row) => row.Status === 'open'), "nothing left to do, today's included");
+  assert.strictEqual(String(taskRow(gas, id).Active).toUpperCase(), 'FALSE');
+  assert.strictEqual(stopped.task.next, '', 'a stopped task has no next week');
+  submit(gas, null, NEXT_MON);
+  gas.setNow(at(FRI, '07:00'));
+  gas.tick();
+  assert.ok(!rowsOfTask(gas, id).some((row) => row['Week Of'] === NEXT_MON), 'and the Friday build leaves it out');
+
+  gas.setNow(at(FRI, '09:00'));
+  const again = ok(gas.post({ action: 'mgrRecurringEdit', code: CODE, by: 'Mia', id, active: true }));
+  assert.ok(again.placed >= 2, 'back on this Saturday and next week, which is out now');
+  assert.ok(rowsOfTask(gas, id).some((row) => row['Week Of'] === NEXT_MON && row.Status === 'open'));
+
+  const actions = gas.rows('Log').map((line) => line.Action);
+  ['task added', 'task edited', 'task stopped', 'task started again'].forEach((action) => assert.ok(actions.includes(action), action));
+  refused(gas.post({ action: 'mgrRecurringEdit', code: CODE, by: 'Mia', id: 'T08', title: 'x' }), /set staff/);
+  refused(gas.post({ action: 'mgrRecurringEdit', code: CODE, by: 'Mia', id: 'T99', title: 'x' }), /can't find/);
+  refused(gas.post({ action: 'mgrRecurringEdit', code: CODE, by: 'Mia', id, days: 'none' }), /at least one day/);
+  refused(gas.post({ action: 'mgrRecurringEdit', code: CODE, by: 'Mia', id, every: 2, starts: '2026-11-02' }), /this week or a later one/);
+});
+
+test('mgrRecurringEdit: an existing daily task can change from the site, and a hand-placed row stays put', () => {
+  const gas = built();
+  gas.setNow(at(TUE, '09:00'));
+  const board = ok(gas.get({ action: 'mgrBoard', code: CODE }));
+  const thursday = board.days.find((day) => day.date === THU);
+  const t01 = thursday.groups.flatMap((group) => group.tasks).concat(thursday.uncovered).find((one) => one.id === `task|T01|${THU}`);
+  assert.ok(t01, 'Thursday has its Unbox packages');
+  ok(gas.post({ action: 'mgrAssign', code: CODE, by: 'Mia', id: t01.id, name: 'Ben', date: THU }));
+  const reply = ok(gas.post({ action: 'mgrRecurringEdit', code: CODE, by: 'Mia', id: 'T01', days: ['Mon', 'Wed', 'Thu', 'Fri'] }));
+  assert.strictEqual(taskRow(gas, 'T01').Days, 'Mon, Wed, Thu, Fri');
+  assert.strictEqual(taskRow(gas, 'T01')['How Frequent'], '4x per week');
+  assert.strictEqual(taskRow(gas, 'T01')['Flex Days'], 0, 'more than 3 days a week never moves');
+  const rows = rowsOfTask(gas, 'T01');
+  assert.ok(!rows.some((row) => row.Date === SAT && row.Status === 'open'), "Saturday's came off");
+  assert.ok(rows.some((row) => row.ID === `task|T01|${THU}` && row.Name === 'Ben'), 'the one placed by hand stayed');
+  assert.ok(reply.removed >= 1);
 });

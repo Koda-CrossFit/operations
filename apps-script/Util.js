@@ -623,6 +623,28 @@ function appendRows_(tab, objects) {
   return start;
 }
 
+/** Adds any of these headers the tab is missing, at the right-hand end, so a sheet made before they existed can hold them. */
+function ensureColumns_(tab, wanted) {
+  var headers = headersOf_(tab);
+  var missing = wanted.filter(function (header) {
+    return headers.indexOf(header) < 0;
+  });
+  if (!missing.length) return;
+  var sheet = sheet_(tab);
+  markWrote_();
+  var start = headers.length + 1;
+  var needed = start + missing.length - 1;
+  if (needed > sheet.getMaxColumns()) sheet.insertColumnsAfter(sheet.getMaxColumns(), needed - sheet.getMaxColumns());
+  sheet.getRange(1, start, 1, missing.length).setValues([missing]).setFontWeight('bold');
+  missing.forEach(function (header, i) {
+    var width = COLUMN_WIDTHS_[tab] && COLUMN_WIDTHS_[tab][header];
+    if (width) sheet.setColumnWidth(start + i, width);
+  });
+  var cache = req_();
+  if (cache.headers) delete cache.headers[tab];
+  invalidate_(tab);
+}
+
 /** Changes the named cells of one row. */
 function updateRow_(tab, row, fields) {
   var sheet = sheet_(tab);
@@ -744,6 +766,19 @@ function flexDays_(value) {
   return days > FLEX_DAYS_MAX_ ? 0 : Math.max(0, days);
 }
 
+/** How many weeks apart a task runs. Blank, or anything that isn't a sensible number, is every week. */
+function taskEvery_(value) {
+  var every = parseInt(value, 10);
+  return every >= 1 && every <= TASK_EVERY_MAX_ ? every : 1;
+}
+
+/** The Monday a task's weeks count from, or ''. One that runs every few weeks with no start counts from the site's first week. */
+function taskStarts_(value, every) {
+  var starts = dateString_(value);
+  if (!starts && every > 1) starts = dateString_(settings_().first_week);
+  return starts ? mondayOf_(starts) : '';
+}
+
 /** 'Set' means only set staff unless covering. Mon-Sat and the word Daily both read as the full list. */
 function tasks_() {
   return typed_(TABS_.TASKS, function (rows) {
@@ -751,6 +786,7 @@ function tasks_() {
       .map(function (row, index) {
         var days = text_(row['Days']);
         var setOnly = /^set$/i.test(days);
+        var every = taskEvery_(row['Every']);
         return {
           id: text_(row['ID']),
           title: text_(row['Task']),
@@ -762,7 +798,10 @@ function tasks_() {
           setOnly: setOnly,
           flexDays: flexDays_(row['Flex Days']),
           active: isActive_(row['Active']),
+          every: every,
+          starts: taskStarts_(row['Starts'], every),
           order: index + 1,
+          _row: row._row,
         };
       })
       .filter(function (task) {

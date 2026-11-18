@@ -28,7 +28,7 @@ var TABS_ = {
 /** Every tab but Monthly Hours, which is laid out by hand in Seed.js. A run's one batched read (readBatch_ in Util.js) asks for each of these. */
 var HEADERS_ = {
   Staff: ['Rank', 'Name', 'Email', 'Type', 'Set Days', 'Set Tasks', 'Active', 'Notes'],
-  Tasks: ['ID', 'Task', 'Details', 'How Frequent', 'Priority', 'Minutes', 'Days', 'Flex Days', 'Active'],
+  Tasks: ['ID', 'Task', 'Details', 'How Frequent', 'Priority', 'Minutes', 'Days', 'Flex Days', 'Active', 'Every', 'Starts'],
   'One-Offs': ['ID', 'Added', 'Added By', 'Task', 'Details', 'Priority', 'Minutes', 'Week Of', 'Day', 'Who', 'Status', 'Done By', 'Done At'],
   Availability: ['Week Of', 'Name', 'Submitted At', 'Late', 'None', 'Hours Wanted', 'Slots', 'Readable', 'Notes'],
   'Time Off': ['ID', 'Name', 'From', 'To', 'Note', 'Added At', 'Status'],
@@ -53,7 +53,7 @@ var HOURS_FORMAT_ = '0.00';
  */
 var COLUMN_FORMATS_ = {
   Staff: { 'Set Days': TEXT_FORMAT_, 'Set Tasks': TEXT_FORMAT_, Notes: TEXT_FORMAT_ },
-  Tasks: { ID: TEXT_FORMAT_, Task: TEXT_FORMAT_, Details: TEXT_FORMAT_, 'How Frequent': TEXT_FORMAT_, Priority: TEXT_FORMAT_, Days: TEXT_FORMAT_ },
+  Tasks: { ID: TEXT_FORMAT_, Task: TEXT_FORMAT_, Details: TEXT_FORMAT_, 'How Frequent': TEXT_FORMAT_, Priority: TEXT_FORMAT_, Days: TEXT_FORMAT_, Starts: TEXT_FORMAT_ },
   'One-Offs': { ID: TEXT_FORMAT_, Added: STAMP_FORMAT_, Task: TEXT_FORMAT_, Details: TEXT_FORMAT_, Priority: TEXT_FORMAT_, 'Week Of': TEXT_FORMAT_, Day: TEXT_FORMAT_, Who: TEXT_FORMAT_, 'Done At': STAMP_FORMAT_ },
   Availability: { 'Week Of': TEXT_FORMAT_, 'Submitted At': STAMP_FORMAT_, Slots: TEXT_FORMAT_, Readable: TEXT_FORMAT_, Notes: TEXT_FORMAT_ },
   'Time Off': { ID: TEXT_FORMAT_, From: TEXT_FORMAT_, To: TEXT_FORMAT_, Note: TEXT_FORMAT_, 'Added At': STAMP_FORMAT_ },
@@ -67,6 +67,7 @@ var COLUMN_FORMATS_ = {
 
 /** Columns read back as 'YYYY-MM-DD', whatever Sheets turned them into. A number in one of these reads back as a date too. */
 var DATE_COLUMNS_ = {
+  Tasks: ['Starts'],
   'One-Offs': ['Week Of'],
   Availability: ['Week Of'],
   'Time Off': ['From', 'To'],
@@ -79,7 +80,7 @@ var DATE_COLUMNS_ = {
 /** Starting widths in pixels, so a person can read each tab without resizing it. */
 var COLUMN_WIDTHS_ = {
   Staff: { Rank: 50, Name: 130, Email: 220, Type: 80, 'Set Days': 120, 'Set Tasks': 120, Active: 60, Notes: 280 },
-  Tasks: { ID: 50, Task: 300, Details: 420, 'How Frequent': 110, Priority: 70, Minutes: 70, Days: 200, 'Flex Days': 70, Active: 60 },
+  Tasks: { ID: 50, Task: 300, Details: 420, 'How Frequent': 110, Priority: 70, Minutes: 70, Days: 200, 'Flex Days': 70, Active: 60, Every: 60, Starts: 90 },
   'One-Offs': { ID: 110, Added: 150, 'Added By': 90, Task: 280, Details: 320, Priority: 70, Minutes: 70, 'Week Of': 90, Day: 60, Who: 140, Status: 70, 'Done By': 90, 'Done At': 150 },
   Availability: { 'Week Of': 90, Name: 110, 'Submitted At': 150, Late: 60, None: 60, 'Hours Wanted': 90, Slots: 240, Readable: 280, Notes: 280 },
   'Time Off': { ID: 110, Name: 110, From: 90, To: 90, Note: 260, 'Added At': 150, Status: 80 },
@@ -94,6 +95,9 @@ var COLUMN_WIDTHS_ = {
 var SERIAL_ZERO_MS_ = -2209161600000; // 1899-12-30 as UTC, the day Sheets counts its dates from
 var SERIAL_MAX_ = 2958465; // 9999-12-31, as far as a date goes. A bigger number in a date column is just a number
 var NO_ROLL_TASKS_ = ['T15']; // Floors: left undone, it's marked missed and the managers hear about it, and it never moves to anyone else
+var TASK_EVERY_MAX_ = 12; // the Every column: weeks between runs. The site offers 1 or 2; the sheet takes up to this
+var TASK_MOVE_FLEX_ = 6; // a weekly task added on the site that may move goes anywhere in its week...
+var TASK_MOVE_FLEX_MULTI_ = 1; // ...or a day either side, when it's on more than one day a week
 var FLEX_DAYS_MAX_ = 366; // anything bigger in the Flex Days column is a date someone typed, not a real number of days
 
 var DAY_KEYS_ = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

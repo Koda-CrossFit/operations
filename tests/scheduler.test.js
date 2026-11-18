@@ -8,7 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const { schedPriorityScore, schedBuildWeek, schedFillOpen } = require('../apps-script/Scheduler.js');
+const { schedPriorityScore, schedBuildWeek, schedFillOpen, schedTaskInWeek } = require('../apps-script/Scheduler.js');
 const { SEED_TASKS_ } = require('../apps-script/SeedTasks.js');
 const { MON_SAT, STAFF, avail, buildInput, oneOff, row, task, workedExampleAvailability } = require('../dev/fixtures.js');
 
@@ -1778,7 +1778,7 @@ test('every top-level name in Scheduler.js is a public function or ends in an un
   const code = fs.readFileSync(SCHEDULER_PATH, 'utf8');
   const names = [...code.matchAll(/^(?:function|var|const|let)\s+([A-Za-z0-9_$]+)/gm)].map((m) => m[1]);
   assert.ok(names.length > 20);
-  const publicNames = ['schedPriorityScore', 'schedBuildWeek', 'schedFillOpen'];
+  const publicNames = ['schedPriorityScore', 'schedBuildWeek', 'schedFillOpen', 'schedTaskInWeek'];
   names.forEach((name) => {
     assert.ok(publicNames.includes(name) || name.endsWith('_'), `${name} should end in an underscore`);
     assert.ok(/^(sched|SCHED_)/.test(name), `${name} should start with sched so it can't clash with another file`);
@@ -1842,3 +1842,34 @@ test('one task, one day: holds across lots of thin weeks', () => {
   }
 });
 
+
+/* ------------------------------------------------------- every few weeks ------ */
+
+test('schedTaskInWeek: every 2 weeks counts from the Monday of the week it starts', () => {
+  const fortnightly = task({ id: 'T90', days: ['Wed'], every: 2, starts: '2026-11-02' });
+  assert.strictEqual(schedTaskInWeek(fortnightly, '2026-11-02'), true, 'its first week');
+  assert.strictEqual(schedTaskInWeek(fortnightly, '2026-11-09'), false, 'the week off');
+  assert.strictEqual(schedTaskInWeek(fortnightly, '2026-11-16'), true);
+  assert.strictEqual(schedTaskInWeek(fortnightly, '2026-10-26'), false, 'not before it starts');
+  assert.strictEqual(schedTaskInWeek(fortnightly, '2027-01-04'), false, '9 weeks on, across the new year');
+  assert.strictEqual(schedTaskInWeek(fortnightly, '2027-01-11'), true, '10 weeks on');
+  assert.strictEqual(schedTaskInWeek({ ...fortnightly, starts: '2026-11-04' }, '2026-11-16'), true, 'a mid-week start counts from its Monday');
+  assert.strictEqual(schedTaskInWeek({ ...fortnightly, every: 1, starts: '2026-11-16' }, '2026-11-09'), false, 'a weekly task waits for its start');
+  assert.strictEqual(schedTaskInWeek({ ...fortnightly, every: 1, starts: '2026-11-16' }, '2026-11-23'), true);
+  assert.strictEqual(schedTaskInWeek({ ...fortnightly, starts: '' }, '2026-11-09'), true, 'no start: every week');
+  assert.strictEqual(schedTaskInWeek(task(), '2026-11-09'), true, 'a task without the new fields: every week');
+});
+
+test('a task that runs every 2 weeks only makes rows in its weeks, set staff included', () => {
+  const availability = { Ana: avail(6, ['Mon', 'Wed', 'Fri'], 3) };
+  const fortnightly = task({ id: 'T90', days: ['Wed'], every: 2, starts: '2026-11-02' });
+  assert.strictEqual(run({ tasks: [fortnightly], availability, weekOf: '2026-11-09' }).rows.length, 0, 'its week off');
+  const on = run({ tasks: [fortnightly], availability: { Ana: avail(6, ['Mon', 'Wed', 'Fri'], 3) }, weekOf: '2026-11-16', today: '2026-11-13' }).rows;
+  assert.deepStrictEqual(on.map((r) => [r.key, r.name]), [['task|T90|2026-11-18', 'Ana']], 'its week on');
+
+  const setTask = task({ id: 'T91', setOnly: true, days: [], every: 2, starts: '2026-11-16' });
+  const staff = [{ name: 'Gus', rank: 1, type: 'Set', active: true, setDays: ['Thu'], setTasks: [{ taskId: 'T91', days: null }] }];
+  assert.strictEqual(run({ tasks: [setTask], staff, availability: {}, weekOf: '2026-11-09' }).rows.length, 0, 'set work waits for its start');
+  assert.strictEqual(run({ tasks: [setTask], staff, availability: {}, weekOf: '2026-11-16', today: '2026-11-13' }).rows.length, 1);
+  assert.strictEqual(run({ tasks: [setTask], staff, availability: {}, weekOf: '2026-11-23', today: '2026-11-20' }).rows.length, 0, 'and skips its week off');
+});

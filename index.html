@@ -634,6 +634,13 @@ select.input{
 .pick[aria-pressed=true]{background:var(--tint);border-color:var(--koda);color:var(--koda);font-weight:600}
 .pick:disabled{color:#A0ABB7;background:var(--soft);border-color:var(--line)}
 .oo-list-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}
+.tk-seg{margin-bottom:16px}
+@media (min-width:900px){.tk-seg{max-width:420px}}
+.picks-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+@media (max-width:379.98px){.picks-days{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.pick-day{min-width:0;padding:6px 0}
+.rp-stopped-toggle{display:block;margin-top:14px}
+.rp-stopped{margin-top:10px}
 .oo-row{padding:14px 16px}
 .oo-row+.oo-row{border-top:1px solid var(--line)}
 .oo-title{font-size:17px;line-height:1.3;font-weight:600;color:var(--ink)}
@@ -1121,6 +1128,11 @@ const S = {
   avail: { week: null, chosen: false, data: {}, forms: {}, success: null, loading: {}, error: '' },
   mgr: {
     sub: ['overview', 'week', 'oneoffs', 'hours'].indexOf(place.get('mgrSub')) >= 0 ? place.get('mgrSub') : 'overview',
+    taskMode: place.get('mgrTaskMode') === 'repeat' ? 'repeat' : 'oneoff', // Tasks: one-offs, or the tasks that repeat every week or two
+    recurring: null,
+    recurringErr: '',
+    repeatAdded: '',     // what happened to the last repeating task added
+    stoppedOpen: false,  // the stopped repeating tasks are showing
     overview: null,
     overviewErr: '',
     weekOf: null,
@@ -1646,7 +1658,7 @@ function wrongCode(reply) {
 function forgetCode() {
   S.code = '';
   store.del('code');
-  store.keys().filter((key) => /^(board|mhours)\./.test(key) || key === 'overview').forEach((key) => store.del(key));
+  store.keys().filter((key) => /^(board|mhours)\./.test(key) || key === 'overview' || key === 'recurring').forEach((key) => store.del(key));
   S.mgr.overview = null;
   S.mgr.boards = {};
   S.mgr.hours = {};
@@ -1740,6 +1752,45 @@ function loadMgrHours(month, fresh) {
     render();
   });
 }
+/* Every task on the Tasks tab of the sheet, for Manage > Tasks > Repeating. */
+function loadRecurring(fresh) {
+  if (!S.code) return Promise.resolve();
+  if (!S.mgr.recurring) {
+    const cached = store.get('recurring');
+    if (cached) {
+      S.mgr.recurring = cached;
+      render();
+    }
+  }
+  return readOnce('recurring', fresh, async () => {
+    if (!S.code) return;
+    try {
+      const reply = await apiWrite('mgrRecurring', { code: S.code });
+      if (wrongCode(reply)) {
+        S.errors.code = reply.error;
+      } else if (reply.ok === false) {
+        S.mgr.recurringErr = reply.error;
+      } else {
+        S.mgr.recurring = reply;
+        S.mgr.recurringErr = '';
+        store.set('recurring', reply);
+      }
+    } catch (err) {
+      if (!S.mgr.recurring) S.mgr.recurringErr = OFFLINE_MESSAGE;
+    }
+    render();
+  });
+}
+/* After a repeating task changes, the weeks that are out may have changed too. */
+function refreshAfterRepeat(reply) {
+  if (!reply || !(reply.placed || reply.removed)) return;
+  const view = S.view;
+  if (!view) return;
+  [view.week.thisWeek.weekOf, view.week.nextWeek.weekOf].forEach((weekOf) => {
+    if (S.mgr.boards[weekOf]) loadBoard(weekOf, true);
+  });
+  if (S.mgr.overview) loadOverview(true);
+}
 /* Manage starts on the site's first week until that week has come, since nothing ever runs for an earlier one. */
 function startWeek(view) {
   return view.week.firstWeek || view.week.thisWeek.weekOf;
@@ -1771,7 +1822,10 @@ function loadManage() {
   if (!S.mgr.month) S.mgr.month = view.now.date.slice(0, 7);
   if (S.mgr.sub === 'overview') loadOverview();
   if (S.mgr.sub === 'week') loadBoard(S.mgr.weekOf);
-  if (S.mgr.sub === 'oneoffs') loadBoard(oneOffFormState().weekOf);
+  if (S.mgr.sub === 'oneoffs') {
+    if (S.mgr.taskMode === 'repeat') loadRecurring();
+    else loadBoard(oneOffFormState().weekOf);
+  }
   if (S.mgr.sub === 'hours') loadMgrHours(S.mgr.month);
 }
 
@@ -2554,7 +2608,7 @@ function viewManage() {
   }
   const seg = (id, label) => html`<button type="button" aria-pressed="${sub === id ? 'true' : 'false'}" data-act="mgr-sub" data-sub="${id}">${label}</button>`;
   let body;
-  if (sub === 'oneoffs') body = viewMgrOneOffs(view);
+  if (sub === 'oneoffs') body = viewMgrTasks(view);
   else if (sub === 'hours') body = viewMgrHours(view);
   else if (sub === 'week') body = viewMgrWeek(view);
   else body = viewMgrOverview(view);
@@ -2562,7 +2616,7 @@ function viewManage() {
     <div class="mg-head">
       <h1 class="title">Manage</h1>
       <div class="seg mg-seg" role="group" aria-label="Manage section">
-        ${seg('overview', 'Overview')}${seg('week', 'Week')}${seg('oneoffs', 'One-offs')}${seg('hours', 'Hours')}
+        ${seg('overview', 'Overview')}${seg('week', 'Week')}${seg('oneoffs', 'Tasks')}${seg('hours', 'Hours')}
       </div>
     </div>
     <div data-key="mgr:${sub}">${body}</div>`;
@@ -2640,7 +2694,7 @@ function viewMgrOverview(view) {
                   <div class="ov-item-title">${task.title}${task.active ? '' : html`<span class="chip chip-quiet">Off</span>`}</div>
                   <div class="ov-item-meta">${[task.cadence, 'Priority ' + task.priority, task.days, minutesText(task.minutes)].filter(Boolean).join(' · ')}</div>
                 </div>
-                <span class="ov-item-count">${task.scheduled ? task.done + ' of ' + task.scheduled : 'None'}</span>
+                <span class="ov-item-count">${task.scheduled ? task.done + ' of ' + task.scheduled : task.active && task.thisWeek === false ? 'Not this week' : 'None'}</span>
               </li>`)}
           </ul>
           <h3 class="h3 ov-sub">One-offs this week</h3>
@@ -3279,6 +3333,155 @@ function viewMgrOneOffs(view) {
     </div>`;
 }
 
+/* tasks: one-offs, and the tasks that repeat */
+
+function viewMgrTasks(view) {
+  const mode = S.mgr.taskMode;
+  return html`
+    <div class="seg tk-seg" role="group" aria-label="Which tasks">
+      <button type="button" aria-pressed="${mode === 'oneoff' ? 'true' : 'false'}" data-act="mgr-taskmode" data-mode="oneoff">One-offs</button>
+      <button type="button" aria-pressed="${mode === 'repeat' ? 'true' : 'false'}" data-act="mgr-taskmode" data-mode="repeat">Repeating</button>
+    </div>
+    <div data-key="tk:${mode}">${mode === 'repeat' ? viewMgrRepeating(view) : viewMgrOneOffs(view)}</div>`;
+}
+function repeatFormState() {
+  const state = form('repeat');
+  if (state.days === undefined) resetRepeatFields(state);
+  const data = S.mgr.recurring;
+  if (data && !data.weeks.slice(0, 2).some((week) => week.weekOf === state.starts)) state.starts = (data.weeks[1] || data.weeks[0]).weekOf; // next week, unless picked
+  return state;
+}
+function resetRepeatFields(state) {
+  state.title = '';
+  state.details = '';
+  state.days = [];
+  state.every = 1;
+  state.starts = '';
+  state.priority = 'B';
+  state.minutes = 30;
+  state.canMove = true;
+}
+function viewRepeatFields(formName, state, weeks) {
+  const durations = DURATIONS.some((one) => one.value === Number(state.minutes))
+    ? DURATIONS
+    : DURATIONS.concat([{ value: Number(state.minutes), label: minutesText(state.minutes) }]);
+  const days = state.days || [];
+  const every = Number(state.every) || 1;
+  const pick = (field, value, label, on, extra) => html`
+    <button type="button" class="pick ${extra || ''}" aria-pressed="${on ? 'true' : 'false'}" data-act="rp-pick" data-form-name="${formName}" data-field="${field}" data-value="${value}">${label}</button>`;
+  const startWeeks = (weeks || []).slice(0, 2);
+  const adding = formName === 'repeat';
+  const starting = startWeeks.find((week) => week.weekOf === state.starts);
+  const moved = adding || state.starts !== state.nextWas; // editing, and a different week picked
+  let startNote = '';
+  if (starting && moved) startNote = (starting.out ? (starting === startWeeks[0] ? "This week's schedule is out, so it goes on from today." : "That week's schedule is out, so it goes on now.") : "It goes out with Friday's schedule.") + (every > 1 ? ' Then every other week.' : '');
+  else if (starting && every > 1) startNote = 'Then every other week.';
+  return html`
+    <label class="field">
+      <span class="label">What needs done?</span>
+      <input class="input" type="text" maxlength="120" enterkeyhint="go" id="${formName}-title" data-form="${formName}" data-field="title" value="${state.title || ''}" placeholder="Clean out the fridge">
+    </label>
+    ${fieldError(formName + 'Title')}
+    ${adding && S.mgr.repeatAdded ? html`<p class="form-ok" role="status">${S.mgr.repeatAdded}</p>` : ''}
+    <label class="field">
+      <span class="label">Details <span class="opt">(optional)</span></span>
+      ${adding
+        ? html`<input class="input" type="text" maxlength="500" enterkeyhint="go" data-form="${formName}" data-field="details" value="${state.details || ''}">`
+        : html`<textarea class="input" rows="3" maxlength="500" data-form="${formName}" data-field="details">${state.details || ''}</textarea>`}
+    </label>
+    <div class="group" role="group" aria-label="Which days">
+      <div class="label">Which days?</div>
+      <div class="picks picks-days">${Object.keys(DAY_LONG).map((day) => pick('days', day, day, days.indexOf(day) >= 0, 'pick-day'))}</div>
+    </div>
+    <div class="group" role="group" aria-label="How often">
+      <div class="label">How often?</div>
+      <div class="picks">${pick('every', 1, 'Every week', every === 1, 'pick-big')}${pick('every', 2, 'Every 2 weeks', every === 2, 'pick-big')}</div>
+    </div>
+    ${(adding || every > 1) && startWeeks.length
+      ? html`
+        <div class="group" role="group" aria-label="${adding ? 'Starting' : 'Next time'}">
+          <div class="label">${adding ? 'Starting' : 'Next time'}</div>
+          <div class="picks">${startWeeks.map((week, i) => pick('starts', week.weekOf, html`${i ? 'Next week' : 'This week'}<small>${week.label}</small>`, state.starts === week.weekOf, 'pick-week'))}</div>
+          ${startNote ? html`<p class="pick-note">${startNote}</p>` : ''}
+        </div>`
+      : ''}
+    <div class="group" role="group" aria-label="Priority">
+      <div class="label">Priority</div>
+      <div class="picks">${PRIORITIES.map((priority) => pick('priority', priority, priority, String(state.priority).charAt(0) === priority, 'pick-big'))}</div>
+    </div>
+    <div class="group" role="group" aria-label="About how long">
+      <div class="label">About how long?</div>
+      <div class="picks">${durations.map((one) => pick('minutes', one.value, one.label, Number(state.minutes) === one.value))}</div>
+    </div>
+    ${days.length && days.length <= 3
+      ? html`
+        <div class="group" role="group" aria-label="If nobody can do it that day">
+          <div class="label">If nobody can do it that day</div>
+          <div class="picks">${pick('canMove', 'yes', 'Move it to another day', state.canMove !== false, 'pick-big')}${pick('canMove', 'no', 'Skip it', state.canMove === false, 'pick-big')}</div>
+        </div>`
+      : ''}`;
+}
+function viewMgrRepeating(view) {
+  const data = S.mgr.recurring;
+  const state = repeatFormState();
+  const tasks = data ? data.tasks : [];
+  const running = tasks.filter((task) => task.active);
+  const stopped = tasks.filter((task) => !task.active);
+  return html`
+    <div class="mgr-two">
+      <section class="card oo-form" aria-label="Add a repeating task">
+        <h2 class="h2">Add a repeating task</h2>
+        <form data-submit="repeat" novalidate>
+          ${viewRepeatFields('repeat', state, data ? data.weeks : [])}
+          <div class="dock">
+            ${fieldError('repeat')}
+            <button type="submit" class="btn btn-primary" ${isBusy('repeat') || !data ? new Safe('disabled') : ''}>${isBusy('repeat') ? 'Adding...' : 'Add repeating task'}</button>
+          </div>
+        </form>
+      </section>
+      <section aria-label="Repeating tasks">
+        <div class="oo-list-head">
+          <h2 class="h2">Repeating tasks</h2>
+          <span class="count">${data ? running.length : ''}</span>
+        </div>
+        ${data
+          ? html`
+            ${running.length ? html`<ul class="card">${running.map(viewRepeatRow)}</ul>` : html`<div class="card empty"><p class="muted">No repeating tasks yet.</p></div>`}
+            ${stopped.length
+              ? html`
+                <button type="button" class="link rp-stopped-toggle" aria-expanded="${S.mgr.stoppedOpen ? 'true' : 'false'}" data-act="rp-stopped">${S.mgr.stoppedOpen ? 'Hide' : 'Show'} stopped tasks (${stopped.length})</button>
+                ${S.mgr.stoppedOpen ? html`<ul class="card rp-stopped">${stopped.map(viewRepeatRow)}</ul>` : ''}`
+              : ''}`
+          : S.mgr.recurringErr
+            ? html`<div class="card empty"><p class="strong">${S.mgr.recurringErr}</p><button type="button" class="btn btn-line" style="margin-top:14px" data-act="mgr-retry">Try again</button></div>`
+            : html`<div class="skel skel-card"></div>`}
+      </section>
+    </div>`;
+}
+function viewRepeatRow(task) {
+  const thisWeek = S.mgr.recurring && S.mgr.recurring.weeks[0] ? S.mgr.recurring.weeks[0].weekOf : '';
+  const parts = [task.setOnly ? 'Set staff' : task.daysText, 'Priority ' + task.priority, 'About ' + minutesText(task.minutes)];
+  if (task.active && task.next && (task.every > 1 || task.next > thisWeek)) parts.push((task.every > 1 ? 'Next: ' : 'Starts ') + task.nextLabel);
+  if (!task.active) parts.push('Stopped');
+  const starting = isBusy('rpStart:' + task.id);
+  return html`
+    <li class="oo-row${task.active ? '' : ' is-done'}" data-key="rp:${task.id}">
+      <div class="oo-title">${task.title}</div>
+      ${task.details ? html`<div class="oo-details">${task.details}</div>` : ''}
+      <div class="oo-status">${parts.map((part) => html`<span>${part}</span>`)}</div>
+      ${task.setOnly
+        ? ''
+        : html`
+          <div class="oo-btns">
+            ${task.active
+              ? html`
+                <button type="button" class="btn btn-line" data-act="rp-edit" data-id="${task.id}" aria-label="Edit ${task.title}">Edit</button>
+                <button type="button" class="btn btn-line" data-act="rp-stop" data-id="${task.id}" aria-label="Stop ${task.title}">Stop</button>`
+              : html`<button type="button" class="btn btn-line" data-act="rp-start" data-id="${task.id}" aria-label="Start ${task.title} again" ${starting ? new Safe('disabled') : ''}>${starting ? 'Starting...' : 'Start again'}</button>`}
+          </div>`}
+    </li>`;
+}
+
 /* hours */
 
 function viewMgrHours() {
@@ -3508,6 +3711,17 @@ const SHEETS = {
         </div>
       </form>`);
   },
+  editRepeat(data) {
+    const state = form('repeatEdit');
+    return sheetFrame('Edit repeating task', html`
+      <form data-submit="repeatEdit" data-id="${data.id}" novalidate>
+        ${viewRepeatFields('repeatEdit', state, S.mgr.recurring ? S.mgr.recurring.weeks : [])}
+        <div class="dock">
+          ${fieldError('repeatEdit')}
+          <button type="submit" class="btn btn-primary" ${isBusy('repeatEdit') ? new Safe('disabled') : ''}>${isBusy('repeatEdit') ? 'Saving...' : 'Save'}</button>
+        </div>
+      </form>`);
+  },
   entry(data) {
     const state = form('entry');
     const editing = !!data.id;
@@ -3619,7 +3833,7 @@ function dropSheetHistory() {
 function closeSheet() {
   dropSheetHistory();
   S.sheet = null;
-  S.errors.addHours = S.errors.fix = S.errors.move = S.errors.entry = S.errors.oneoffEdit = S.errors.confirm = '';
+  S.errors.addHours = S.errors.fix = S.errors.move = S.errors.entry = S.errors.oneoffEdit = S.errors.repeatEdit = S.errors.repeatEditTitle = S.errors.confirm = '';
   render();
   if (sheetOpener && document.contains(sheetOpener)) sheetOpener.focus({ preventScroll: true });
   sheetOpener = null;
@@ -3855,6 +4069,15 @@ const CONFIRMED = {
     if (reply.ok === false) return reply;
     showToast(reply.unfilled ? 'Done. ' + plural(reply.unfilled, 'task') + ' still uncovered.' : 'Done. Everything is covered.');
     loadBoard(S.mgr.weekOf, true);
+    return reply;
+  },
+  async repeatStop(data) {
+    const reply = await apiWrite('mgrRecurringEdit', { code: S.code, id: data.id, active: false, by: S.me });
+    if (reply.ok === false) return reply;
+    showToast(reply.removed ? "Stopped. It's off everyone's list." : 'Stopped.');
+    S.mgr.stoppedOpen = false;
+    loadRecurring(true);
+    refreshAfterRepeat(reply);
     return reply;
   },
   async oneOffDelete(data) {
@@ -4203,6 +4426,7 @@ const A = {
     S.mgr.overviewErr = '';
     S.mgr.boardErr = '';
     S.mgr.hoursErr = '';
+    S.mgr.recurringErr = '';
     render();
     loadManage();
   },
@@ -4231,6 +4455,71 @@ const A = {
   'mgr-group'(el) {
     const key = el.dataset.key2;
     S.mgr.open[key] = !groupOpen(key);
+    render();
+  },
+  'mgr-taskmode'(el) {
+    S.mgr.taskMode = el.dataset.mode === 'repeat' ? 'repeat' : 'oneoff';
+    place.set('mgrTaskMode', S.mgr.taskMode);
+    S.mgr.added = '';
+    S.mgr.repeatAdded = '';
+    loadManage();
+    render();
+  },
+  'rp-pick'(el) {
+    const name = el.dataset.formName;
+    const state = form(name);
+    const field = el.dataset.field;
+    const value = el.dataset.value;
+    if (field === 'days') {
+      const days = state.days || [];
+      const next = days.indexOf(value) >= 0 ? days.filter((day) => day !== value) : days.concat([value]);
+      state.days = Object.keys(DAY_LONG).filter((day) => next.indexOf(day) >= 0);
+    } else if (field === 'minutes' || field === 'every') {
+      state[field] = Number(value);
+    } else if (field === 'canMove') {
+      state.canMove = value === 'yes';
+    } else {
+      state[field] = value;
+    }
+    if (name === 'repeat') S.mgr.repeatAdded = '';
+    if (field === 'days' && (state.days || []).length) S.errors[name] = '';
+    render();
+  },
+  'rp-edit'(el) {
+    const task = S.mgr.recurring && S.mgr.recurring.tasks.find((one) => one.id === el.dataset.id);
+    if (!task) return;
+    S.forms.repeatEdit = { title: task.title, details: task.details, days: task.days.slice(), every: task.every, starts: task.next || '', nextWas: task.every > 1 ? task.next || '' : '', priority: task.priority, minutes: task.minutes, canMove: task.canMove };
+    S.errors.repeatEdit = '';
+    S.errors.repeatEditTitle = '';
+    openSheet('editRepeat', { id: task.id });
+  },
+  'rp-stop'(el) {
+    const task = S.mgr.recurring && S.mgr.recurring.tasks.find((one) => one.id === el.dataset.id);
+    S.errors.confirm = '';
+    openSheet('confirm', { title: 'Stop this task?', body: (task ? task.title + '. ' : '') + "It comes off everyone's list from today, and you can start it again any time.", yes: 'Stop it', run: 'repeatStop', id: el.dataset.id });
+  },
+  async 'rp-start'(el) {
+    const id = el.dataset.id;
+    const key = 'rpStart:' + id;
+    if (isBusy(key)) return;
+    S.busy[key] = true;
+    render();
+    try {
+      const reply = await apiWrite('mgrRecurringEdit', { code: S.code, id, active: true, by: S.me });
+      if (reply.ok === false) showToast(reply.error);
+      else {
+        showToast(reply.placed ? "Started again. It's back on the schedule." : "Started again. It goes out with Friday's schedule.");
+        await loadRecurring(true);
+        refreshAfterRepeat(reply);
+      }
+    } catch (err) {
+      showToast(OFFLINE_MESSAGE);
+    }
+    S.busy[key] = false;
+    render();
+  },
+  'rp-stopped'() {
+    S.mgr.stoppedOpen = !S.mgr.stoppedOpen;
     render();
   },
   'mgr-mode'(el) {
@@ -4650,6 +4939,78 @@ const SUBMITS = {
       S.errors.oneoffEdit = OFFLINE_MESSAGE;
     }
     S.busy.oneoffEdit = false;
+    render();
+  },
+  async repeat() {
+    const state = repeatFormState();
+    if (!(state.title || '').trim()) {
+      S.errors.repeatTitle = 'Please say what needs done.';
+      render();
+      const box = $('#repeat-title');
+      if (box) box.focus();
+      return;
+    }
+    if (!(state.days || []).length) {
+      S.errors.repeat = 'Please pick at least one day.';
+      render();
+      return;
+    }
+    S.busy.repeat = true;
+    S.errors.repeat = '';
+    S.errors.repeatTitle = '';
+    S.mgr.repeatAdded = '';
+    render();
+    try {
+      const reply = await apiWrite('mgrRecurringAdd', { code: S.code, title: state.title.trim(), details: (state.details || '').trim(), days: state.days, every: Number(state.every) || 1, starts: state.starts, priority: state.priority, minutes: Number(state.minutes), canMove: state.canMove !== false, by: S.me });
+      if (reply.ok === false) {
+        S.errors.repeat = reply.error;
+      } else {
+        S.mgr.repeatAdded = 'Added: ' + reply.task.title + '. ' + (reply.placed ? "It's on the schedule now." : 'First week: ' + reply.task.nextLabel + '.');
+        resetRepeatFields(state);
+        S.busy.repeat = false;
+        await loadRecurring(true);
+        refreshAfterRepeat(reply);
+      }
+    } catch (err) {
+      S.errors.repeat = OFFLINE_MESSAGE;
+    }
+    S.busy.repeat = false;
+    render();
+  },
+  async repeatEdit(el) {
+    const state = form('repeatEdit');
+    if (!(state.title || '').trim()) {
+      S.errors.repeatEditTitle = 'Please say what needs done.';
+      render();
+      const box = $('#repeatEdit-title');
+      if (box) box.focus();
+      return;
+    }
+    if (!(state.days || []).length) {
+      S.errors.repeatEdit = 'Please pick at least one day.';
+      render();
+      return;
+    }
+    S.busy.repeatEdit = true;
+    S.errors.repeatEdit = '';
+    S.errors.repeatEditTitle = '';
+    render();
+    try {
+      const every = Number(state.every) || 1;
+      const reply = await apiWrite('mgrRecurringEdit', { code: S.code, id: el.dataset.id, title: state.title.trim(), details: (state.details || '').trim(), days: state.days, every, starts: every > 1 ? state.starts || '' : '', priority: state.priority, minutes: Number(state.minutes), canMove: state.canMove !== false, by: S.me });
+      if (reply.ok === false) {
+        S.errors.repeatEdit = reply.error;
+      } else {
+        S.busy.repeatEdit = false;
+        closeSheet();
+        showToast(reply.removed || reply.placed ? 'Saved. The schedule changes from tomorrow.' : 'Saved.');
+        await loadRecurring(true);
+        refreshAfterRepeat(reply);
+      }
+    } catch (err) {
+      S.errors.repeatEdit = OFFLINE_MESSAGE;
+    }
+    S.busy.repeatEdit = false;
     render();
   },
   async entry() {

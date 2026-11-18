@@ -71,6 +71,9 @@ function actionTable_() {
     mgrOverview: { run: apiMgrOverview_, manager: true },
     mgrBoard: { run: apiMgrBoard_, manager: true },
     mgrHours: { run: apiMgrHours_, manager: true },
+    mgrRecurring: { run: apiMgrRecurring_, manager: true },
+    mgrRecurringAdd: { run: apiMgrRecurringAdd_, manager: true, write: true },
+    mgrRecurringEdit: { run: apiMgrRecurringEdit_, manager: true, write: true },
     mgrOneOffAdd: { run: apiMgrOneOffAdd_, manager: true, write: true, notify: true },
     mgrOneOffEdit: { run: apiMgrOneOffEdit_, manager: true, write: true, notify: true },
     mgrOneOffDelete: { run: apiMgrOneOffDelete_, manager: true, write: true },
@@ -740,8 +743,13 @@ function matchInput_(weekOf) {
  * keeps its key, so anything it hands back under a key that's already in use is dropped,
  * and an ID can never be in the sheet twice.
  */
-function matchWeek_(weekOf, keepRows) {
+function matchWeek_(weekOf, keepRows, onlyTask) {
   var input = matchInput_(weekOf);
+  if (onlyTask) {
+    // Just this one task, around everything already there: nothing else is made or moves.
+    input.tasks = [onlyTask];
+    input.oneOffs = [];
+  }
   var end = addDays_(weekOf, 6);
   // A missed task a manager deleted is still in its place, so nothing makes it again.
   var removed = scheduleRowsAll_().filter(function (row) {
@@ -1530,10 +1538,11 @@ function workDaysMap_(weekOf) {
 
 /** 'Set', 'Mon-Sat', or the days listed. */
 function taskDaysText_(task) {
-  if (task.setOnly) return 'Set';
-  if (task.days.join() === DAY_KEYS_.slice(0, 6).join()) return 'Mon-Sat';
-  if (task.days.length === 7) return 'Every day';
-  return task.days.join(', ');
+  var every = task.every > 1 ? ', every ' + task.every + ' weeks' : '';
+  if (task.setOnly) return 'Set' + every;
+  if (task.days.join() === DAY_KEYS_.slice(0, 6).join()) return 'Mon-Sat' + every;
+  if (task.days.length === 7) return 'Every day' + every;
+  return task.days.join(', ') + every;
 }
 
 /** Where a one-off stands: done, open (someone has it), uncovered, missed, or waiting for its week to go out. */
@@ -1628,6 +1637,7 @@ function apiMgrOverview_() {
         days: taskDaysText_(task),
         minutes: task.minutes,
         active: task.active,
+        thisWeek: schedTaskInWeek(task, weekOf),
         done: rows.filter(isDone).length,
         scheduled: rows.length,
       };
@@ -1787,6 +1797,230 @@ function apiMgrOneOffDelete_(req) {
 }
 
 /* ---------------------------------------------------------- managers: the week ---- */
+
+/* ----------------------------------------------------------- repeating tasks ---- */
+
+/** The first week, from this one on, that a task runs in, or '' if it doesn't within a year. */
+function nextRunWeek_(task, monday) {
+  for (var i = 0; i < 53; i++) {
+    var weekOf = addDays_(monday, i * 7);
+    if (schedTaskInWeek(task, weekOf)) return weekOf;
+  }
+  return '';
+}
+
+/** A task on Manage > Tasks. */
+function recurringView_(task, info) {
+  var next = task.active && !task.setOnly ? nextRunWeek_(task, info.monday) : '';
+  return {
+    id: task.id,
+    title: task.title,
+    details: task.details,
+    priority: task.priority,
+    minutes: task.minutes,
+    days: task.days,
+    daysText: taskDaysText_(task),
+    every: task.every,
+    canMove: task.flexDays > 0,
+    active: task.active,
+    setOnly: task.setOnly,
+    next: next,
+    nextLabel: next ? weekLabel_(next) : '',
+  };
+}
+
+function apiMgrRecurring_() {
+  var info = nowInfo_();
+  var weeks = [];
+  for (var i = 0; i < 8; i++) {
+    var weekOf = addDays_(info.monday, i * 7);
+    weeks.push({ weekOf: weekOf, label: weekLabel_(weekOf), out: isPublished_(weekOf) });
+  }
+  return {
+    tasks: tasks_().map(function (task) {
+      return recurringView_(task, info);
+    }),
+    weeks: weeks,
+  };
+}
+
+/** Checks a repeating task from Manage. `starts` is the Monday of its first week, or '' to leave it as it was. */
+function cleanRecurring_(source) {
+  var title = cleanText_(source.title, MAX_TITLE_);
+  if (!title) fail_('Please say what needs done.');
+  var priority = text_(source.priority || 'B').toUpperCase();
+  if (!/^[ABC]\+*$/.test(priority)) fail_('Priority has to be A, B or C.');
+  var minutes = Number(source.minutes === undefined || source.minutes === '' ? 30 : source.minutes);
+  if (!(minutes >= 1 && minutes <= ONE_OFF_MAX_MINUTES_)) fail_('About how long has to be between 1 minute and 16 hours.');
+  var days = parseDays_(Array.isArray(source.days) ? source.days.join(', ') : source.days);
+  if (!days.length) fail_('Please pick at least one day.');
+  var every = Number(source.every === undefined || source.every === '' ? 1 : source.every);
+  if (!(every >= 1 && every <= TASK_EVERY_MAX_ && Math.floor(every) === every)) fail_('Please pick every week or every 2 weeks.');
+  return {
+    title: title,
+    details: cleanText_(source.details, MAX_TEXT_),
+    priority: priority,
+    minutes: Math.round(minutes),
+    days: days,
+    every: every,
+    starts: text_(source.starts) ? requireMonday_(source.starts) : '',
+    canMove: source.canMove === undefined ? true : isTrue_(source.canMove),
+  };
+}
+
+/** 'Daily', '1x per week', '2x every 2 weeks': the same words the Tasks tab already uses. */
+function cadenceText_(days, every) {
+  if (every === 1 && days.join() === DAY_KEYS_.slice(0, 6).join()) return 'Daily';
+  return days.length + 'x ' + (every === 1 ? 'per week' : 'every ' + every + ' weeks');
+}
+
+/** How far a task from Manage can move when nobody's in on its day: anywhere in its week if it's once a week, a day either side at 2 or 3 times, and not at all past that. */
+function flexFor_(fields) {
+  if (!fields.canMove || fields.days.length > 3) return 0;
+  return fields.days.length === 1 ? TASK_MOVE_FLEX_ : TASK_MOVE_FLEX_MULTI_;
+}
+
+/** T16, T17...: one past the highest T number on the Tasks tab or anywhere on the Schedule, so an old ID is never used again. */
+function nextTaskId_() {
+  var top = 0;
+  var see = function (id) {
+    var match = /^T(\d+)$/i.exec(text_(id));
+    if (match) top = Math.max(top, Number(match[1]));
+  };
+  tasks_().forEach(function (task) {
+    see(task.id);
+  });
+  scheduleRowsAll_().forEach(function (row) {
+    see(row.taskId);
+  });
+  var next = top + 1;
+  return 'T' + (next < 10 ? '0' + next : String(next));
+}
+
+function requireTask_(id) {
+  var task = taskIndex_()[text_(id)];
+  if (!task) fail_("We can't find that task. It may have been taken off the Tasks tab.");
+  return task;
+}
+
+/**
+ * Puts one repeating task on the weeks that are already out, from today on, matched around everyone's
+ * work so nothing else moves. Weeks still to be built pick it up on Friday. Returns the new rows.
+ */
+function placeRecurring_(id, info) {
+  var task = taskIndex_()[id];
+  if (!task || !task.active || task.setOnly) return [];
+  var added = [];
+  [info.monday, addDays_(info.monday, 7)].forEach(function (weekOf) {
+    if (!isPublished_(weekOf) || !schedTaskInWeek(task, weekOf)) return;
+    var rows = matchWeek_(weekOf, scheduleForWeek_(weekOf), task).filter(function (row) {
+      return row.taskId === task.id && !row.oneOffId && row.date >= info.date;
+    });
+    if (!rows.length) return;
+    appendRows_(TABS_.SCHEDULE, rows.map(rowToCells_));
+    added = added.concat(rows);
+  });
+  return added;
+}
+
+function apiMgrRecurringAdd_(req) {
+  var fields = cleanRecurring_(req);
+  var info = nowInfo_();
+  if (!fields.starts) fields.starts = info.monday;
+  if (fields.starts < info.monday) fail_('Please pick this week or a later one to start.');
+  requireFromFirstWeek_(fields.starts);
+  var by = managerName_(req.by);
+  var id = nextTaskId_();
+  ensureColumns_(TABS_.TASKS, ['Every', 'Starts']);
+  appendRows_(TABS_.TASKS, [
+    {
+      ID: id,
+      Task: fields.title,
+      Details: fields.details,
+      'How Frequent': cadenceText_(fields.days, fields.every),
+      Priority: fields.priority,
+      Minutes: fields.minutes,
+      Days: fields.days.join(', '),
+      'Flex Days': flexFor_(fields),
+      Active: true,
+      Every: fields.every,
+      Starts: fields.starts,
+    },
+  ]);
+  var placed = placeRecurring_(id, info);
+  log_(by, 'task added', fields.title + ' (' + fields.days.join(', ') + ', ' + (fields.every === 1 ? 'every week' : 'every ' + fields.every + ' weeks') + ', from the week of ' + fields.starts + ')');
+  return { id: id, placed: placed.length, task: recurringView_(requireTask_(id), info) };
+}
+
+/**
+ * Changes a task from Manage. New words, priority or length also go on anything not done yet from today on.
+ * New days, how often, its start or whether it can move: anything not done from tomorrow on (and anything
+ * uncovered today) comes off and is matched again, unless a manager put it there by hand or it was carried
+ * over, so today's lists stay as they are. Stopping it takes everything not done off from today, apart from
+ * anything a manager put there by hand.
+ */
+function apiMgrRecurringEdit_(req) {
+  var task = requireTask_(req.id);
+  if (task.setOnly) fail_('That one belongs to set staff, so change it on the Tasks tab of the sheet.');
+  var info = nowInfo_();
+  var by = managerName_(req.by);
+  var merged = { title: task.title, details: task.details, priority: task.priority, minutes: task.minutes, days: task.days, every: task.every, starts: '', canMove: task.flexDays > 0 };
+  ['title', 'details', 'priority', 'minutes', 'days', 'every', 'starts', 'canMove'].forEach(function (field) {
+    if (req[field] !== undefined) merged[field] = req[field];
+  });
+  var fields = cleanRecurring_(merged);
+  var starts = fields.starts || task.starts;
+  // The same weeks as before, named by a later one of them, keeps the start it had.
+  if (fields.every === task.every && task.starts && starts > task.starts && schedTaskInWeek(task, starts)) starts = task.starts;
+  if (fields.every > 1 && !starts) starts = info.monday;
+  if (starts !== task.starts && starts < info.monday) fail_('Please pick this week or a later one to start.');
+  var active = req.active === undefined ? task.active : isTrue_(req.active);
+  var daysChanged = fields.days.join() !== task.days.join();
+  var flex = daysChanged || fields.canMove !== task.flexDays > 0 ? flexFor_(fields) : task.flexDays;
+
+  var cells = { Task: fields.title, Details: fields.details, Priority: fields.priority, Minutes: fields.minutes, 'Flex Days': flex, Active: active };
+  if (daysChanged || fields.every !== task.every) {
+    cells.Days = fields.days.join(', ');
+    cells['How Frequent'] = cadenceText_(fields.days, fields.every);
+  }
+  if (fields.every !== task.every || starts !== task.starts) {
+    ensureColumns_(TABS_.TASKS, ['Every', 'Starts']);
+    cells.Every = fields.every;
+    cells.Starts = starts;
+  }
+  updateRow_(TABS_.TASKS, task._row, cells);
+
+  var textChanged = fields.title !== task.title || fields.details !== task.details || fields.priority !== task.priority || fields.minutes !== task.minutes;
+  var planChanged = daysChanged || fields.every !== task.every || starts !== task.starts || flex !== task.flexDays || active !== task.active;
+  var out = [info.monday, addDays_(info.monday, 7)].filter(isPublished_);
+  var notDone = scheduleRows_().filter(function (row) {
+    return row.taskId === task.id && !row.oneOffId && row.status === 'open' && row.date >= info.date && out.indexOf(mondayOf_(row.date)) >= 0;
+  });
+  if (textChanged) {
+    notDone.forEach(function (row) {
+      updateRow_(TABS_.SCHEDULE, row._row, { Task: fields.title, Details: fields.details, Priority: fields.priority, Minutes: fields.minutes });
+    });
+  }
+  var removed = [];
+  var placed = [];
+  if (planChanged) {
+    var stopping = !active && task.active;
+    removed = notDone.filter(function (row) {
+      if (row.source === 'manual') return false;
+      return stopping || (row.source !== 'carry' && (row.date > info.date || !row.name));
+    });
+    deleteRows_(
+      TABS_.SCHEDULE,
+      removed.map(function (row) {
+        return row._row;
+      })
+    );
+    if (active) placed = placeRecurring_(task.id, info);
+  }
+  var what = active === task.active ? 'task edited' : active ? 'task started again' : 'task stopped';
+  log_(by, what, fields.title + (removed.length || placed.length ? ' (' + removed.length + ' off the schedule, ' + placed.length + ' on)' : ''));
+  return { placed: placed.length, removed: removed.length, task: recurringView_(requireTask_(task.id), info) };
+}
 
 function apiMgrAssign_(req) {
   var row = requireRow_(req.id);

@@ -944,7 +944,8 @@ const SCENES = {
     await page.waitText('Done.');
 
     // One-offs: five in a row must be quick.
-    await page.click('.seg button', { text: 'One-offs' });
+    await page.click('.seg button', { text: 'Tasks' });
+    await page.click('.tk-seg button', { text: 'One-offs' });
     await page.waitText('Add a one-off');
     await page.waitFor('.oo-row');
     check(await page.eval(`(() => { const button = document.querySelector('.oo-form button[type=submit]').getBoundingClientRect(); return button.top >= 0 && button.bottom <= document.querySelector('.tabbar').getBoundingClientRect().top; })()`), 'Add task is on screen without scrolling the form');
@@ -1148,7 +1149,8 @@ const SCENES = {
     await page.noSideScroll('desktop daily view');
     await page.click('.wv-seg button', { text: 'Week view' });
     await page.waitFor('.wv-grid');
-    await page.click('.seg button', { text: 'One-offs' });
+    await page.click('.seg button', { text: 'Tasks' });
+    await page.click('.tk-seg button', { text: 'One-offs' });
     await page.waitFor('.oo-row');
     await page.shot('desktop-manage-oneoffs');
     await page.noSideScroll('desktop one-offs');
@@ -1167,7 +1169,8 @@ const SCENES = {
     await page.setValue('.sheet input[data-field=end]', '12:00');
     await page.click('.sheet button[type=submit]');
     await page.gone('needs a fix');
-    await page.click('.seg button', { text: 'One-offs' });
+    await page.click('.seg button', { text: 'Tasks' });
+    await page.click('.tk-seg button', { text: 'One-offs' });
     await page.waitFor('.oo-form');
     await page.type('#oneoff-title', 'Dust the trophy shelf');
     await page.click('.pick[data-field=day][data-value=Thu]');
@@ -1282,7 +1285,8 @@ const SCENES = {
     await page.click('.wv-seg button', { text: 'Week view' });
     await page.waitFor('.wv-grid');
     check(await page.eval(`(() => { const labels = Array.from(document.querySelectorAll('.tab')); return labels.every((el) => el.scrollWidth <= el.clientWidth + 1); })()`), '320 wide: the five tab labels fit');
-    await page.click('.seg button', { text: 'One-offs' });
+    await page.click('.seg button', { text: 'Tasks' });
+    await page.click('.tk-seg button', { text: 'One-offs' });
     await page.waitFor('.oo-form');
     await page.noSideScroll('320 one-offs');
     await page.shot('narrow-manage-oneoffs');
@@ -1344,7 +1348,8 @@ const SCENES = {
     check(!(await page.eval(`!!document.querySelector('.mgroup img, .mgroup script')`)), 'markup in a task never becomes an element in Daily view');
     await page.click('.wv-seg button', { text: 'Week view' });
     await page.waitFor('.wv-grid');
-    await page.click('.seg button', { text: 'One-offs' });
+    await page.click('.seg button', { text: 'Tasks' });
+    await page.click('.tk-seg button', { text: 'One-offs' });
     await page.waitFor('.oo-row');
     await page.waitText('XXXX');
     await page.shot('stress-manage-oneoffs');
@@ -1605,7 +1610,8 @@ const SCENES = {
     await page.goto('/');
     await page.waitText('Deadline was Fri, Nov 13 at 7:00 AM');
     check(!(await page.hasText('Next deadline: Fri, Nov 13')), 'a deadline that has passed is not called next');
-    await page.click('.seg button', { text: 'One-offs' });
+    await page.click('.seg button', { text: 'Tasks' });
+    await page.click('.tk-seg button', { text: 'One-offs' });
     await page.waitFor('.oo-form');
     check(await page.eval(`document.querySelector('.pick[data-field=weekOf][aria-pressed=true]').innerText.includes('Next week')`), 'on a Saturday a new one-off defaults to next week');
     await page.click('.oo-form button[type=submit]');
@@ -1681,6 +1687,86 @@ const SCENES = {
   },
 
   /* A missed task that got done after all: a manager checks it off. */
+  async repeating(page) {
+    // Manage > Tasks > Repeating: add one every 2 weeks, check it, edit it, stop it, start it again.
+    await page.viewport(390, 844, true);
+    await page.resetWorld();
+    await page.clearSite();
+    await page.eval(`localStorage.setItem('koda-ops.v1.code', '"${CODE}"')`);
+    await page.goto('/?me=Max&tab=manage');
+    await page.waitText(OVERVIEW);
+    await page.click('.seg button', { text: 'Tasks' });
+    await page.click('.tk-seg button', { text: 'Repeating' });
+    await page.waitText('Add a repeating task');
+    await page.waitFor('[data-key="rp:T01"]');
+    check(await page.hasText('Unbox packages'), 'the tasks already on the Tasks tab are listed');
+    check(await page.eval(`!document.querySelector('[data-key="rp:T08"] [data-act=rp-edit]')`), 'set staff tasks have no Edit');
+    await page.shot('phone-manage-repeating');
+    await page.noSideScroll('repeating');
+
+    const submit = 'form[data-submit=repeat] button[type=submit]';
+    await page.click(submit);
+    await page.waitText('Please say what needs done.');
+    await page.type('#repeat-title', 'Clean out the fridge');
+    await page.click(submit);
+    await page.waitText('Please pick at least one day.');
+    await page.click('[data-act=rp-pick][data-field=days][data-value=Thu]');
+    await page.click('[data-act=rp-pick][data-field=every][data-value="2"]');
+    check(await page.eval(`!!document.querySelector('[data-field=starts][data-value="2026-11-16"][aria-pressed=true]')`), 'it starts next week unless picked');
+    await page.click('[data-act=rp-pick][data-field=starts][data-value="2026-11-09"]');
+    await page.waitText('Then every other week.');
+    check(await page.hasText("This week's schedule is out, so it goes on from today."), 'it says this week is already out');
+    check(await page.eval(`!!document.querySelector('[data-field=canMove][aria-pressed=true]')`), 'once a week: it may move by default');
+    await page.shot('phone-manage-repeating-form');
+    await page.noSideScroll('repeating form');
+    await page.click(submit);
+    await page.waitText('Added: Clean out the fridge.');
+    await page.waitText('Thu, every 2 weeks');
+    check(await page.eval(`document.querySelector('#repeat-title').value === ''`), 'the form clears after adding');
+    const board = await api({ action: 'mgrBoard', code: CODE, weekOf: '2026-11-09' });
+    const onBoard = [];
+    board.days.forEach((day) => day.groups.concat([{ tasks: day.uncovered }]).forEach((group) => group.tasks.forEach((task) => {
+      if (task.title === 'Clean out the fridge') onBoard.push(day.date);
+    })));
+    check(onBoard.length === 1 && onBoard[0] >= '2026-11-10', 'it went on this week, once, from today');
+    await page.shot('phone-manage-repeating-added');
+
+    // Edit: a new name.
+    await page.click('[data-act=rp-edit][aria-label="Edit Clean out the fridge"]');
+    await page.waitText('Edit repeating task');
+    check(await page.hasText('Next time'), 'every 2 weeks shows which week is next');
+    await page.shot('phone-manage-repeating-edit');
+    await page.setValue('#repeatEdit-title', 'Clean out both fridges');
+    await page.click('.sheet button[type=submit]');
+    await page.waitText('Saved.');
+    await page.waitText('Clean out both fridges');
+
+    // Stop, then start again.
+    await page.click('[data-act=rp-stop][aria-label="Stop Clean out both fridges"]');
+    await page.waitText('Stop this task?');
+    await page.click('.sheet .btn', { text: 'Stop it' });
+    await page.waitText('Show stopped tasks (1)');
+    await page.click('[data-act=rp-stopped]');
+    await page.waitFor('[data-act=rp-start]');
+    await page.shot('phone-manage-repeating-stopped');
+    await page.click('[data-act=rp-start]');
+    await page.waitText('Started again.');
+    await page.gone('Show stopped tasks');
+
+    // Narrow phone and desktop.
+    await page.viewport(320, 640, true);
+    await page.goto('/?me=Max&tab=manage');
+    await page.waitText('Add a repeating task');
+    await page.noSideScroll('repeating, narrow phone');
+    await page.shot('narrow-manage-repeating');
+    await page.viewport(1280, 800, false);
+    await page.goto('/?me=Max&tab=manage');
+    await page.waitText('Add a repeating task');
+    await page.noSideScroll('repeating, desktop');
+    await page.shot('desktop-manage-repeating');
+    await page.resetWorld();
+  },
+
   async missed(page) {
     await page.viewport(390, 844, true);
     await page.resetWorld();
@@ -1952,7 +2038,8 @@ const SCENES = {
     check(await page.hasText('Starts Nov 9'), 'before the first week, the Overview says when the site starts');
     await toWeek(page);
     check(await page.eval(`document.querySelector('.wk-switch h2').innerText === 'Nov 9 - 15'`), 'before the first week, Manage opens on the first week');
-    await page.click('.seg button', { text: 'One-offs' });
+    await page.click('.seg button', { text: 'Tasks' });
+    await page.click('.tk-seg button', { text: 'One-offs' });
     await page.waitFor('.oo-form');
     const weekChips = await page.eval(`Array.from(document.querySelectorAll('.pick[data-field=weekOf]')).map((el) => el.innerText.replace(/\\s+/g, ' ')).join()`);
     check(weekChips === 'Next week Nov 9 - 15', `before the first week, the only week on offer is that one (${weekChips})`);

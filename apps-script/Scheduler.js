@@ -5,7 +5,7 @@
  * data. Dates are 'YYYY-MM-DD' strings and all date math goes through Date.UTC, so
  * daylight saving can never shift a day. Same input, same output.
  *
- * Public: schedPriorityScore, schedBuildWeek, schedFillOpen.
+ * Public: schedPriorityScore, schedBuildWeek, schedFillOpen, schedTaskInWeek.
  *
  * How it works: everything that needs a person becomes a "job", which is the Row that
  * goes back to the caller plus what matching needs to know about it (preferred date,
@@ -29,6 +29,19 @@ function schedPriorityScore(priority) {
   var letter = { A: 3, B: 2, C: 1 }[text.charAt(0)];
   if (!letter) return 0;
   return letter * 100 + (text.split('+').length - 1);
+}
+
+/**
+ * Whether a task runs in the week starting `weekOf`. A task with a `starts` date runs from that week on,
+ * and with `every` above 1, only every that many weeks counted from that week. No `starts` means every week.
+ */
+function schedTaskInWeek(task, weekOf) {
+  var starts = task && task.starts ? schedMondayOf_(task.starts) : '';
+  if (!starts) return true;
+  var week = schedMondayOf_(weekOf);
+  if (week < starts) return false;
+  var every = Math.max(1, Math.floor(Number(task.every) || 1));
+  return Math.round(schedDaysBetween_(starts, week) / 7) % every === 0;
 }
 
 /**
@@ -144,7 +157,7 @@ function schedAddSetJobs_(ctx, jobs) {
       if ((person.setDays || []).indexOf(day) < 0 || !schedDateOpen_(ctx, date)) return;
       (person.setTasks || []).forEach(function (setTask) {
         var task = ctx.tasksById[setTask.taskId];
-        if (!task || task.active === false) return;
+        if (!task || task.active === false || !schedTaskInWeek(task, ctx.weekOf)) return;
         if (setTask.days && setTask.days.indexOf(day) < 0) return;
         var key = 'set|' + task.id + '|' + date + '|' + person.name;
         if (schedIsLocked_(ctx, key, task.id, date)) return;
@@ -162,10 +175,10 @@ function schedAddSetJobs_(ctx, jobs) {
   });
 }
 
-/** Rule 2. A row whose whole window is closed or already past is dropped. */
+/** Rule 2. A row whose whole window is closed or already past is dropped. A task that runs every few weeks only makes rows in its weeks. */
 function schedAddTaskJobs_(ctx, jobs) {
   ctx.tasks.forEach(function (task) {
-    if (task.active === false || task.setOnly) return;
+    if (task.active === false || task.setOnly || !schedTaskInWeek(task, ctx.weekOf)) return;
     ctx.dates.forEach(function (date) {
       if ((task.days || []).indexOf(schedDayKey_(date)) < 0) return;
       var key = 'task|' + task.id + '|' + date;
@@ -711,6 +724,16 @@ function schedAddDays_(date, days) {
   return new Date(Date.UTC(parts[0], parts[1], parts[2] + days)).toISOString().slice(0, 10);
 }
 
+function schedMondayOf_(date) {
+  return schedAddDays_(date, -SCHED_DAYS_.indexOf(schedDayKey_(date)));
+}
+
+function schedDaysBetween_(from, to) {
+  var a = schedDateParts_(from);
+  var b = schedDateParts_(to);
+  return Math.round((Date.UTC(b[0], b[1], b[2]) - Date.UTC(a[0], a[1], a[2])) / 86400000);
+}
+
 function schedDayKey_(date) {
   var parts = schedDateParts_(date);
   var sundayFirst = new Date(Date.UTC(parts[0], parts[1], parts[2])).getUTCDay();
@@ -751,5 +774,5 @@ function schedIndex_(list) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { schedPriorityScore, schedBuildWeek, schedFillOpen };
+  module.exports = { schedPriorityScore, schedBuildWeek, schedFillOpen, schedTaskInWeek };
 }
