@@ -1993,6 +1993,51 @@ function managerEntryView_(entry) {
   return view;
 }
 
+/**
+ * Everyone's tasks in a month, up to and including today: newest day first, then what got done in the
+ * order it was checked off, then the rest in the usual task order.
+ */
+function hoursMonthTasks_(month, today) {
+  var rows = sortRows_(
+    scheduleRows_().filter(function (row) {
+      return row.name && monthOf_(row.date) === month && row.date <= today;
+    })
+  );
+  var order = Object.create(null);
+  rows.forEach(function (row, i) {
+    order[row.id] = i;
+  });
+  var doneTime = function (row) {
+    return row.doneAt ? row.doneAt.getTime() : 0;
+  };
+  return rows.sort(function (a, b) {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    var aDone = a.status === 'done';
+    var bDone = b.status === 'done';
+    if (aDone !== bDone) return aDone ? -1 : 1;
+    return (aDone ? doneTime(a) - doneTime(b) : 0) || order[a.id] - order[b.id];
+  });
+}
+
+/** A task under a day on Manage > Hours. A check-off on a later day (a manager's Mark done, or past midnight) says which day. */
+function hoursTaskView_(row) {
+  var status = row.status === 'done' || row.status === 'missed' ? row.status : 'open';
+  var doneAt = '';
+  if (status === 'done' && row.doneAt) doneAt = dateString_(row.doneAt) === row.date ? timeLabel_(row.doneAt) : stampLabel_(row.doneAt);
+  return {
+    id: row.id,
+    date: row.date,
+    dayLabel: dayLabel_(row.date),
+    title: row.title,
+    status: status,
+    doneAt: doneAt,
+    minutes: row.minutes,
+    covering: row.source === 'cover',
+    rolled: !!row.rolledFrom,
+    note: row.note,
+  };
+}
+
 function apiMgrHours_(req) {
   var info = nowInfo_();
   var month = text_(req.month) ? requireMonth_(req.month) : info.month;
@@ -2020,12 +2065,21 @@ function apiMgrHours_(req) {
     if (names.indexOf(entry.name) < 0) names.push(entry.name);
   });
 
+  // What each person had on the schedule that month up to today, and anything they wrote in, so each day's hours sit next to that day's work.
+  var monthTasks = hoursMonthTasks_(month, info.date);
+  var monthExtras = extraRows_().filter(function (row) {
+    return monthOf_(row.date) === month && row.date <= info.date;
+  });
+
   var people = names.map(function (name) {
     var entries = inMonth
       .filter(function (entry) {
         return entry.name === name;
       })
       .sort(newestFirst_);
+    var tasks = monthTasks.filter(function (row) {
+      return row.name === name;
+    });
     return {
       name: name,
       total: totalHours_(entries),
@@ -2034,6 +2088,17 @@ function apiMgrHours_(req) {
         return entryHasIssue_(entry, info);
       }).length,
       entries: entries.map(managerEntryView_),
+      done: tasks.filter(function (row) {
+        return row.status === 'done';
+      }).length,
+      tasks: tasks.map(hoursTaskView_),
+      extras: monthExtras
+        .filter(function (row) {
+          return row.name === name;
+        })
+        .map(function (row) {
+          return { id: row.id, date: row.date, dayLabel: dayLabel_(row.date), text: row.text };
+        }),
     };
   });
   return {

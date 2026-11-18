@@ -2230,7 +2230,7 @@ test('mgrHours: per person totals, issues, months, and it matches the sheet\'s r
   assert.strictEqual(report.label, 'November 2026');
   assert.deepStrictEqual(report.months, [{ month: '2026-11', label: 'November 2026' }, { month: '2026-10', label: 'October 2026' }]);
   const ana = report.people.find((person) => person.name === 'Ana');
-  deepKeys(ana, ['name', 'total', 'shifts', 'issues', 'entries'], 'mgrHours person');
+  deepKeys(ana, ['name', 'total', 'shifts', 'issues', 'entries', 'done', 'tasks', 'extras'], 'mgrHours person');
   assert.deepStrictEqual([ana.total, ana.shifts, ana.issues, ana.entries.length], [2.5, 1, 0, 1]);
   const ben = report.people.find((person) => person.name === 'Ben');
   assert.deepStrictEqual([ben.total, ben.shifts, ben.issues], [0, 1, 1]);
@@ -2242,6 +2242,52 @@ test('mgrHours: per person totals, issues, months, and it matches the sheet\'s r
   assert.strictEqual(october.people.find((person) => person.name === 'Ana').total, 0.66, '0.33 and 0.33: the same sum the sheet adds up');
   assert.strictEqual(ok(gas.get({ action: 'mgrHours', code: CODE })).month, '2026-11', 'this month by default');
   refused(gas.get({ action: 'mgrHours', code: CODE, month: 'November' }), /pick a month/);
+});
+
+test('mgrHours: each person\'s tasks and write-ins for the month, up to today, newest day first', () => {
+  const gas = built();
+  const anaOn = (date) => gas.rows('Schedule').filter((row) => row.Name === 'Ana' && row.Date === date);
+  assert.ok(anaOn(MON).length >= 2, 'Ana has a few things on Monday');
+  gas.setNow(at(MON, '09:00'));
+  ok(gas.post({ action: 'clockIn', name: 'Ana' }));
+  gas.setNow(at(MON, '09:40'));
+  ok(gas.post({ action: 'taskToggle', name: 'Ana', id: `task|T01|${MON}`, done: true }));
+  ok(gas.post({ action: 'extraAdd', name: 'Ana', text: 'Swept the porch' }));
+  gas.setNow(at(MON, '11:30'));
+  ok(gas.post({ action: 'clockOut', name: 'Ana' }));
+  gas.setNow(at(TUE, '00:35'));
+  gas.tick();
+  gas.setNow(at(TUE, '09:00'));
+  const missed = gas.rows('Schedule').filter((row) => row.Name === 'Ana' && row.Date === MON && row.Status === 'missed');
+  assert.ok(missed.length >= 1, 'Ana left something on Monday');
+  ok(gas.post({ action: 'mgrTaskDone', code: CODE, id: missed[0].ID, by: 'Max' }));
+  const someonesMissed = gas.rows('Schedule').find((row) => row.Status === 'missed' && row.Name);
+  if (someonesMissed) ok(gas.post({ action: 'mgrTaskRemove', code: CODE, id: someonesMissed.ID, by: 'Max' }));
+
+  const report = ok(gas.get({ action: 'mgrHours', code: CODE, month: '2026-11' }));
+  const ana = report.people.find((person) => person.name === 'Ana');
+  ana.tasks.forEach((task) => deepKeys(task, ['id', 'date', 'dayLabel', 'title', 'status', 'doneAt', 'minutes', 'covering', 'rolled', 'note'], 'mgrHours task'));
+  assert.ok(ana.tasks.every((task) => task.date <= TUE), 'nothing after today');
+  assert.ok(gas.rows('Schedule').some((row) => row.Name === 'Ana' && row.Date > TUE), 'though she has later work');
+  const shownMon = ana.tasks.filter((task) => task.date === MON);
+  assert.strictEqual(shownMon.length, anaOn(MON).filter((row) => row.Status !== 'removed').length, 'everything she had on Monday');
+  assert.deepStrictEqual(shownMon.slice(0, 2).map((task) => [task.id, task.status, task.doneAt]), [
+    [`task|T01|${MON}`, 'done', '9:40 AM'],
+    [missed[0].ID, 'done', 'Tue, Nov 10 at 9:00 AM'],
+  ], 'done first, in the order checked off, and a later check-off says which day');
+  assert.strictEqual(shownMon[0].dayLabel, 'Mon, Nov 9');
+  assert.ok(shownMon.slice(2).every((task) => task.status !== 'done'), 'then the rest');
+  const dates = ana.tasks.map((task) => task.date);
+  assert.deepStrictEqual(dates, dates.slice().sort().reverse(), 'newest day first');
+  assert.ok(ana.tasks.filter((task) => task.date === TUE).every((task) => task.status === 'open'), "today's are still open");
+  assert.strictEqual(ana.done, 2);
+  assert.deepStrictEqual(ana.extras.map((item) => [item.date, item.dayLabel, item.text]), [[MON, 'Mon, Nov 9', 'Swept the porch']]);
+  if (someonesMissed) assert.ok(!report.people.some((person) => person.tasks.some((task) => task.id === someonesMissed.ID)), 'a deleted task never shows');
+  report.people.forEach((person) => assert.ok(person.tasks.every((task) => gas.rows('Schedule').some((row) => row.ID === task.id && row.Name === person.name)), 'only their own'));
+  assert.ok(!/@/.test(JSON.stringify(report)), 'no email addresses');
+
+  const october = ok(gas.get({ action: 'mgrHours', code: CODE, month: '2026-10' }));
+  assert.deepStrictEqual(october.people.find((person) => person.name === 'Ana').tasks, [], 'another month has its own');
 });
 
 test('mgrOverview: this week in one reply, with the documented shape and the right counts', () => {

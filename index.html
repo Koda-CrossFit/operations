@@ -674,6 +674,16 @@ select.input{
 .hp-entry{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
 .hp-entry .btn{flex:none;width:auto;min-height:44px;padding:6px 12px;font-size:14px;border-radius:10px;border-color:var(--line);color:var(--koda)}
 .hp-add{margin-top:10px}
+.hp-day{padding:12px 0 8px;border-top:1px solid var(--line)}
+.hp-dayhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font-size:16px;line-height:1.35;font-weight:600;color:var(--ink)}
+.hp-daytotal{flex:none;font-size:15px;font-weight:500;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.hp-day .hp-entry{padding:4px 0;border-top:0}
+.entry-when{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px}
+.hp-day .entry-time{font-size:15px;color:var(--text)}
+.hp-day .entry-time.danger{color:var(--danger)}
+.hp-tasks{margin-top:4px;padding:0}
+.hp-tasks .mtask{padding:6px 0;border-top:0}
+.hp-day .mextras{margin-top:4px;padding:4px 0 0;border-top:0}
 
 /* ----- sign in ----- */
 .signin{max-width:440px;margin:0 auto;padding:calc(36px + var(--safe-t)) var(--gutter) calc(40px + var(--safe-b))}
@@ -3299,7 +3309,7 @@ function viewMgrHours() {
                 <span class="avatar avatar-sm">${initial(person.name)}</span>
                 <span class="hp-who">
                   <span class="hp-name">${firstNameOrFull(person.name, report.people.map((one) => one.name))}${person.issues ? html`<span class="chip chip-danger">${person.issues} to fix</span>` : ''}${longOnes(person) ? html`<span class="chip">${longOnes(person)} long</span>` : ''}</span>
-                  <span class="hp-sub">${plural(person.shifts, 'entry', 'entries')}</span>
+                  <span class="hp-sub">${plural(person.shifts, 'entry', 'entries')}${person.tasks && person.tasks.length ? ', ' + plural(person.done || 0, 'task', 'tasks') + ' done' : ''}</span>
                 </span>
                 <span class="hp-total${Number(person.total) ? '' : ' is-zero'}">${hoursNumber(person.total)} <small>${Number(person.total) === 1 ? 'hr' : 'hrs'}</small></span>
                 ${I.chevron}
@@ -3307,14 +3317,31 @@ function viewMgrHours() {
               ${open
                 ? html`
                   <div class="hp-entries">
-                    ${person.entries.map((entry) => html`
-                      <div class="hp-entry" data-key="he:${entry.id}">
-                        <div class="entry-text">
-                          <div class="entry-day">${entry.dayLabel}${managerFlag(entry)}${entry.overlaps ? html`<span class="chip chip-danger">Overlaps</span>` : ''}${entry.long ? html`<span class="chip">Long</span>` : ''}</div>
-                          <div class="entry-time ${!entry.out && entry.flag === 'missing' ? 'danger' : ''}"><span class="nowrap">${entry.in}</span> - <span class="nowrap">${entry.out || 'no clock-out'}${entry.hours === null ? '' : ', ' + hrs(entry.hours)}</span></div>
-                          ${entry.note ? html`<div class="entry-note">${entry.note}</div>` : ''}
+                    ${hoursDays(person).map((day) => html`
+                      <div class="hp-day" data-key="hd:${person.name}|${day.date}">
+                        <div class="hp-dayhead">
+                          <span>${day.label}</span>
+                          <span class="hp-daytotal">${day.entries.length ? hrs(day.total) : 'Not clocked in'}</span>
                         </div>
-                        <button type="button" class="btn btn-line" data-act="entry-edit" data-name="${person.name}" data-id="${entry.id}" aria-label="Edit ${entry.dayLabel}">Edit</button>
+                        ${day.entries.map((entry) => html`
+                          <div class="hp-entry" data-key="he:${entry.id}">
+                            <div class="entry-text">
+                              <div class="entry-when">
+                                <span class="entry-time ${!entry.out && entry.flag === 'missing' ? 'danger' : ''}"><span class="nowrap">${entry.in}</span> - <span class="nowrap">${entry.out || 'no clock-out'}${entry.hours === null ? '' : ', ' + hrs(entry.hours)}</span></span>
+                                ${managerFlag(entry)}${entry.overlaps ? html`<span class="chip chip-danger">Overlaps</span>` : ''}${entry.long ? html`<span class="chip">Long</span>` : ''}
+                              </div>
+                              ${entry.note ? html`<div class="entry-note">${entry.note}</div>` : ''}
+                            </div>
+                            <button type="button" class="btn btn-line" data-act="entry-edit" data-name="${person.name}" data-id="${entry.id}" aria-label="Edit ${entry.dayLabel}, ${entry.in}">Edit</button>
+                          </div>`)}
+                        ${day.tasks.length ? html`<ul class="mtasks hp-tasks" aria-label="Tasks on ${day.label}">${day.tasks.map((task) => viewHoursTask(task, day.date))}</ul>` : ''}
+                        ${day.extras.length
+                          ? html`
+                            <div class="mextras">
+                              <p class="mextras-head">Also done</p>
+                              <ul>${day.extras.map((item) => html`<li data-key="hx:${item.id}">${item.text}</li>`)}</ul>
+                            </div>`
+                          : ''}
                       </div>`)}
                     <button type="button" class="btn btn-soft btn-sm hp-add" data-act="entry-add" data-name="${person.name}">Add an entry</button>
                   </div>`
@@ -3323,6 +3350,44 @@ function viewMgrHours() {
         })}
       </div>
     </div>`;
+}
+/**
+ * One person's month on Manage > Hours, a day at a time, newest day first: that day's clock-ins in the order
+ * they happened, then the tasks they had that day, then anything they wrote in. A day with work and no
+ * clock-in shows too.
+ */
+function hoursDays(person) {
+  const days = new Map();
+  const dayOf = (date, label) => {
+    if (!days.has(date)) days.set(date, { date, label, total: 0, entries: [], tasks: [], extras: [] });
+    return days.get(date);
+  };
+  person.entries.forEach((entry) => {
+    const day = dayOf(entry.date, entry.dayLabel);
+    day.entries.unshift(entry); // they come newest first
+    if (entry.hours !== null) day.total = Math.round((day.total + Number(entry.hours)) * 100) / 100;
+  });
+  (person.tasks || []).forEach((task) => dayOf(task.date, task.dayLabel).tasks.push(task));
+  (person.extras || []).forEach((item) => dayOf(item.date, item.dayLabel).extras.push(item));
+  return Array.from(days.values()).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
+function viewHoursTask(task, date) {
+  const today = S.view && S.view.now.date === date;
+  const state = task.status === 'done' ? 'Done ' + task.doneAt : task.status === 'missed' ? 'Missed' : today ? 'Not done yet' : 'Not checked off';
+  return html`
+    <li class="mtask${task.status === 'done' ? ' done' : ''}" data-key="ht:${task.id}">
+      <span class="mstat${task.status === 'done' ? ' is-done' : task.status === 'missed' ? ' is-missed' : ''}" role="img" aria-label="${task.status === 'done' ? 'Done' : task.status === 'missed' ? 'Missed' : 'Not done'}">${I.check}</span>
+      <div class="mtask-text">
+        <div class="mtask-title">${task.title}</div>
+        <div class="mtask-meta">
+          <span class="${task.status === 'missed' ? 'danger' : ''}">${state}</span>
+          ${task.minutes ? html`<span>About ${minutesText(task.minutes)}</span>` : ''}
+          ${task.covering ? html`<span>Covering</span>` : ''}
+          ${task.rolled ? html`<span>Carried over</span>` : ''}
+        </div>
+        ${task.note ? html`<div class="mtask-note">${I.note}<span>${task.note}</span></div>` : ''}
+      </div>
+    </li>`;
 }
 function managerFlag(entry) {
   if (entry.flag === 'missing') return html`<span class="chip chip-danger">Missing</span>`;

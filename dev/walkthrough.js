@@ -1008,6 +1008,18 @@ const SCENES = {
     await page.waitText('1 entry still needs a fix');
     await page.shot('phone-manage-hours');
     await page.noSideScroll('manage hours');
+    // Each day's tasks sit under that day's clock-ins.
+    await page.click('.hp-head[data-key2="hours|Ana"]');
+    await page.waitFor('.hp[data-key="hp:Ana"] .hp-tasks .mtask.done');
+    check(await page.hasText('Done 9:15 AM'), 'Hours shows what Ana checked off, and when');
+    check(await page.hasText('Two boxes were left at the back door'), 'with her note on it');
+    check(await page.eval(`[...document.querySelectorAll('.hp[data-key="hp:Ana"] .hp-day')].some((day) => day.querySelector('.hp-dayhead').innerText.includes('Mon, Nov 9') && !!day.querySelector('.mtask.done'))`), 'under the day it was for');
+    check(await page.eval(`document.querySelector('.hp[data-key="hp:Ana"] .hp-dayhead').innerText.includes('Tue, Nov 10')`), 'newest day first, today included');
+    check(await page.eval(`/tasks? done/.test(document.querySelector('.hp[data-key="hp:Ana"] .hp-sub').innerText)`), 'the month says how many got done');
+    await page.shot('phone-manage-hours-tasks');
+    await page.noSideScroll('manage hours tasks');
+    await page.click('.hp-head[data-key2="hours|Ana"]');
+    await page.gone('Two boxes were left at the back door');
     await page.click('.hp-head[data-key2="hours|Cora"]');
     await page.waitText('no clock-out');
     await page.shot('phone-manage-hours-open');
