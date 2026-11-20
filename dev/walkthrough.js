@@ -1687,6 +1687,47 @@ const SCENES = {
   },
 
   /* A missed task that got done after all: a manager checks it off. */
+  async oneoffWho(page) {
+    // Picking who a one-off is for leaves only the days they can work, like Assign and Move.
+    await page.viewport(390, 844, true);
+    await page.resetWorld();
+    await page.clearSite();
+    await page.eval(`localStorage.setItem('koda-ops.v1.code', '"${CODE}"')`);
+    await page.goto('/?me=Max&tab=manage');
+    await page.waitText(OVERVIEW);
+    await page.click('.seg button', { text: 'Tasks' });
+    await page.click('.tk-seg button', { text: 'One-offs' });
+    await page.waitText('Add a one-off');
+    await page.waitFor('.oo-form [data-field=day][data-value=Fri]');
+    await page.waitFor('.oo-form [data-field=who][data-value=Ben]');
+    const open = () => page.eval(`[...document.querySelectorAll('.oo-form [data-field=day]')].filter((b) => b.dataset.value && !b.disabled).map((b) => b.dataset.value).join(',')`);
+    const before = (await open()).split(',');
+    check(before.length >= 3, 'with anyone, the days from today on are open');
+    const board = await api({ action: 'mgrBoard', code: CODE, weekOf: '2026-11-09' });
+    const key = (date) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(date + 'T12:00:00Z').getUTCDay()];
+    const bens = board.workDays.Ben.map(key);
+    const expected = before.filter((day) => bens.includes(day));
+    check(expected.length > 0 && expected.length < before.length, 'Ben works some of these days and not others');
+
+    const notBens = before.find((day) => !bens.includes(day));
+    await page.click(`.oo-form [data-act=oo-pick][data-field=day][data-value=${notBens}]`);
+    await page.click('.oo-form [data-act=oo-pick][data-field=who][data-value=Ben]');
+    await page.waitText('Only days Ben can work.');
+    check((await open()) === expected.join(','), 'picking Ben leaves only the days Ben can work');
+    check(await page.eval(`document.querySelector('.oo-form [data-field=day][data-value=""]').getAttribute('aria-pressed') === 'true'`), 'a day Ben cannot work goes back to Any day');
+    await page.shot('phone-manage-oneoff-who');
+    await page.noSideScroll('one-off who');
+
+    await page.click('.oo-form [data-act=oo-pick][data-field=who][data-value=Cora]');
+    await page.waitText('Only days Ben or Cora can work.');
+    const both = before.filter((day) => bens.includes(day) || board.workDays.Cora.map(key).includes(day));
+    check((await open()) === both.join(','), 'with two people, any day either can work');
+    await page.click('.oo-form [data-act=oo-pick][data-field=who][data-value=""]');
+    await page.gone('can work.');
+    check((await open()) === before.join(','), 'back to anyone, every day is open again');
+    await page.resetWorld();
+  },
+
   async repeating(page) {
     // Manage > Tasks > Repeating: add one every 2 weeks, check it, edit it, stop it, start it again.
     await page.viewport(390, 844, true);

@@ -3198,10 +3198,29 @@ function viewMgrDaily(board, view, deadlineCard, rerunCard) {
 const PRIORITIES = ['A', 'B', 'C'];
 const DURATIONS = [{ value: 15, label: '15 min' }, { value: 30, label: '30 min' }, { value: 60, label: '1 hr' }, { value: 120, label: '2 hrs' }, { value: 240, label: 'Half day' }];
 
+/*
+ * The dates in a one-off's week that the people it's set aside for can work, or null when there's nothing
+ * to go on: nobody picked, no board yet, or a week still to be built where someone hasn't said yet.
+ */
+function oneOffWorkDates(board, who) {
+  if (!who.length || !board || !board.workDays) return null;
+  const dates = new Set();
+  for (const name of who) {
+    const theirs = board.workDays[name] || [];
+    if (!theirs.length && !board.published) return null; // their availability may still come in
+    theirs.forEach((date) => dates.add(date));
+  }
+  return dates;
+}
+function oneOffDayKey(day) {
+  return day.label.slice(0, 3);
+}
 function viewOneOffFields(formName, state, view, staffNames) {
   const weeks = [{ id: 'thisWeek', label: 'This week' }, { id: 'nextWeek', label: 'Next week' }].filter((week) => view.week[week.id].weekOf >= startWeek(view));
   const chosenWeek = weeks.find((week) => view.week[week.id].weekOf === state.weekOf);
   const days = chosenWeek ? view.week[chosenWeek.id].days : [];
+  const board = S.mgr.boards[state.weekOf];
+  const canWork = oneOffWorkDates(board, state.who || []);
   const durations = DURATIONS.some((one) => one.value === Number(state.minutes))
     ? DURATIONS
     : DURATIONS.concat([{ value: Number(state.minutes), label: minutesText(state.minutes) }]);
@@ -3240,11 +3259,14 @@ function viewOneOffFields(formName, state, view, staffNames) {
       <div class="picks">
         ${pick('day', '', 'Any day', !state.day)}
         ${days.map((day) => {
-          const key = day.label.slice(0, 3);
-          const gone = day.date < view.now.date || !!day.closed;
+          const key = oneOffDayKey(day);
+          const gone = day.date < view.now.date || !!day.closed || (canWork && !canWork.has(day.date));
           return html`<button type="button" class="pick" aria-pressed="${state.day === key ? 'true' : 'false'}" data-act="oo-pick" data-form-name="${formName}" data-field="day" data-value="${key}" ${gone ? new Safe('disabled') : ''}>${key}</button>`;
         })}
       </div>
+      ${canWork
+        ? html`<p class="pick-note">${canWork.size ? 'Only days ' + who.map((name) => firstNameOrFull(name, staffNames)).join(' or ') + ' can work.' : who.map((name) => firstNameOrFull(name, staffNames)).join(' and ') + " can't work any day that week."}</p>`
+        : ''}
     </div>
     <div class="group" role="group" aria-label="Who">
       <div class="label">Who?</div>
@@ -4631,6 +4653,10 @@ const A = {
         const who = state.who || [];
         state.who = who.indexOf(value) >= 0 ? who.filter((one) => one !== value) : who.concat([value]);
       }
+      // A day none of them can work goes back to Any day.
+      const canWork = oneOffWorkDates(S.mgr.boards[state.weekOf], state.who);
+      const day = state.day && canWork ? (S.mgr.boards[state.weekOf].days || []).find((one) => oneOffDayKey(one) === state.day) : null;
+      if (day && !canWork.has(day.date)) state.day = '';
     } else if (field === 'minutes') {
       state.minutes = Number(value);
     } else {
